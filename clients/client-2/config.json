@@ -1,0 +1,35 @@
+{
+  "_note": "target_acos is required and must be set before the engine will run.",
+  "target_acos": null,
+
+  "data_gate": {
+    "min_clicks": 10,
+    "min_spend_multiples_of_target_cpa": 1
+  },
+
+  "bid_rules": {
+    "high_acos": { "max_decrease_pct": 25 },
+    "wasted_spend": {
+      "min_spend_multiples_of_target_cpa": 2,
+      "max_decrease_pct": 50,
+      "bid_floor": 0.02
+    },
+    "low_acos": {
+      "threshold_pct_of_target": 80,
+      "min_increase_pct": 5,
+      "max_increase_pct": 20
+    },
+    "mid_band": {
+      "lower_pct_of_target": 80,
+      "upper_pct_of_target": 100
+    }
+  },
+
+  "harvesting": {
+    "keyword_harvest_min_orders": 3,
+    "negative_harvest_min_clicks": 15,
+    "negative_harvest_max_orders": 0
+  },
+
+  "skip_states": ["paused", "archived"]
+}

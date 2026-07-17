@@ -1,0 +1,46 @@
+{
+  "_note": "target_acos is required and must be set before the engine will run. Value is a percentage, e.g. 20 means 20%.",
+  "target_acos": null,
+
+  "data_gate": {
+    "min_clicks": 10
+  },
+
+  "bid_rules": {
+    "high_acos": {
+      "extreme_multiple_of_target": 2,
+      "normal_max_decrease_pct": 10,
+      "extreme_max_decrease_pct": 25
+    },
+    "low_acos": {
+      "threshold_pct_of_target": 80,
+      "extreme_pct_of_target": 50,
+      "normal_min_increase_pct": 5,
+      "normal_max_increase_pct": 10,
+      "extreme_max_increase_pct": 20
+    },
+    "wasted_spend": {
+      "_note": "Uses the account's actual conversion rate to require statistical confidence before cutting a 0-order keyword, instead of a flat spend multiple.",
+      "max_zero_order_probability_to_act": 0.15,
+      "extreme_zero_order_probability": 0.05,
+      "extreme_min_spend_multiple_of_target_cpa": 2,
+      "normal_max_decrease_pct": 10,
+      "extreme_max_decrease_pct": 25,
+      "bid_floor": 0.02
+    }
+  },
+
+  "history_rules": {
+    "_note": "Reads past logs/changes_*.csv so a new batch doesn't fight the previous one. Cooldown blocks re-touching a keyword too soon; reversal protection blocks flipping direction without enough fresh data. Extreme-tier signals bypass both.",
+    "cooldown_days": 7,
+    "reversal_protection_days": 14
+  },
+
+  "harvesting": {
+    "keyword_harvest_min_orders": 3,
+    "negative_harvest_min_clicks": 15,
+    "negative_harvest_max_orders": 0
+  },
+
+  "skip_states": ["paused", "archived"]
+}

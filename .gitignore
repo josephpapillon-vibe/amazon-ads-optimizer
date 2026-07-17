@@ -1,0 +1,12 @@
+# OS noise
+.DS_Store
+
+# Python
+__pycache__/
+*.pyc
+
+# db/ is fully derived from clients/*/logs and clients/*/context — rebuild with
+# python3 db/build_db.py instead of committing it. Keeps the repo the single
+# source of truth: clients/ folders in, generated database/export out.
+db/optimizer.db
+db/export.json
