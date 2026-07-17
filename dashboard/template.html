@@ -1,0 +1,897 @@
+<meta charset="UTF-8">
+<title>JMN — Moteur d'enchères Amazon Ads</title>
+<style>
+  :root{
+    --bg:#E7EAEA; --surface:#FFFFFF; --surface-2:#DCE1E1; --border:rgba(27,34,38,.14);
+    --ink:#1B2226; --ink-2:#4B5760; --ink-3:#7C8890;
+    --accent:#8C6A24; --accent-strong:#6E521A; --accent-bg:rgba(140,106,36,.12);
+    --good:#2F7A55; --good-bg:rgba(47,122,85,.13);
+    --cut:#A8402F; --cut-bg:rgba(168,64,47,.13);
+    --hold:#55636C; --hold-bg:rgba(85,99,108,.13);
+    --shadow:0 1px 2px rgba(20,26,29,.06), 0 6px 20px -8px rgba(20,26,29,.18);
+    --font-ui:-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    --font-serif:"Iowan Old Style","Sitka Text",Georgia,serif;
+    --font-mono:ui-monospace,"SF Mono","Cascadia Code",Menlo,Consolas,monospace;
+    --radius:10px;
+  }
+  @media (prefers-color-scheme:dark){
+    :root{
+      --bg:#15191B; --surface:#1D2224; --surface-2:#252B2E; --border:rgba(255,255,255,.10);
+      --ink:#EDEFEF; --ink-2:#B7C0C4; --ink-3:#7E8A8F;
+      --accent:#D2A852; --accent-strong:#E7C077; --accent-bg:rgba(210,168,82,.14);
+      --good:#5FAE81; --good-bg:rgba(95,174,129,.15);
+      --cut:#D2806B; --cut-bg:rgba(210,128,107,.15);
+      --hold:#93A0A7; --hold-bg:rgba(147,160,167,.15);
+      --shadow:0 1px 2px rgba(0,0,0,.3), 0 8px 24px -8px rgba(0,0,0,.5);
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#15191B; --surface:#1D2224; --surface-2:#252B2E; --border:rgba(255,255,255,.10);
+    --ink:#EDEFEF; --ink-2:#B7C0C4; --ink-3:#7E8A8F;
+    --accent:#D2A852; --accent-strong:#E7C077; --accent-bg:rgba(210,168,82,.14);
+    --good:#5FAE81; --good-bg:rgba(95,174,129,.15);
+    --cut:#D2806B; --cut-bg:rgba(210,128,107,.15);
+    --hold:#93A0A7; --hold-bg:rgba(147,160,167,.15);
+  }
+  :root[data-theme="light"]{
+    --bg:#E7EAEA; --surface:#FFFFFF; --surface-2:#DCE1E1; --border:rgba(27,34,38,.14);
+    --ink:#1B2226; --ink-2:#4B5760; --ink-3:#7C8890;
+    --accent:#8C6A24; --accent-strong:#6E521A; --accent-bg:rgba(140,106,36,.12);
+    --good:#2F7A55; --good-bg:rgba(47,122,85,.13);
+    --cut:#A8402F; --cut-bg:rgba(168,64,47,.13);
+    --hold:#55636C; --hold-bg:rgba(85,99,108,.13);
+  }
+
+  *{box-sizing:border-box;}
+  @media (prefers-reduced-motion:reduce){ *{transition:none!important; animation:none!important;} }
+  html{background:var(--bg);}
+  body{margin:0; background:var(--bg); min-height:100%;}
+  #app{
+    background:var(--bg); color:var(--ink); font-family:var(--font-ui);
+    min-height:100%; padding:28px clamp(16px,4vw,40px) 60px; line-height:1.45;
+  }
+  a{color:var(--accent);}
+  h1,h2,h3{font-family:var(--font-ui); text-wrap:balance; margin:0;}
+  .num{font-family:var(--font-serif); font-variant-numeric:tabular-nums; font-feature-settings:"lnum" 1;}
+  .mono{font-family:var(--font-mono); font-variant-numeric:tabular-nums;}
+
+  header.top{
+    display:flex; justify-content:space-between; align-items:flex-end; gap:24px;
+    flex-wrap:wrap; margin-bottom:22px; max-width:1180px; margin-inline:auto;
+  }
+  .eyebrow{
+    font-size:11.5px; letter-spacing:.09em; text-transform:uppercase; color:var(--accent-strong);
+    font-weight:600; display:block; margin-bottom:6px;
+  }
+  header.top h1{font-size:24px; font-weight:650; letter-spacing:-.01em;}
+  header.top .sub{color:var(--ink-2); font-size:13.5px; margin-top:5px;}
+
+  .tabs{display:flex; gap:4px; background:var(--surface-2); padding:4px; border-radius:10px; flex-shrink:0;}
+  .tab{
+    font:inherit; font-size:13.5px; font-weight:560; border:none; background:transparent; color:var(--ink-2);
+    padding:9px 16px; border-radius:7px; cursor:pointer;
+  }
+  .tab:hover{color:var(--ink);}
+  .tab[aria-selected="true"]{background:var(--surface); color:var(--ink); box-shadow:var(--shadow);}
+  .tab:focus-visible, button:focus-visible, input:focus-visible, [tabindex]:focus-visible{
+    outline:2px solid var(--accent); outline-offset:2px;
+  }
+
+  main{max-width:1180px; margin-inline:auto; display:flex; flex-direction:column; gap:20px;}
+  section[hidden]{display:none;}
+
+  .card{
+    background:var(--surface); border:1px solid var(--border); border-radius:var(--radius);
+    padding:20px 22px; box-shadow:var(--shadow);
+  }
+  .card > h2{font-size:15.5px; font-weight:650;}
+  .card > .card-desc{color:var(--ink-2); font-size:13px; margin-top:4px; max-width:62ch;}
+
+  .kpi-row{display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:12px;}
+  .kpi{
+    background:var(--surface); border:1px solid var(--border); border-radius:var(--radius);
+    padding:15px 18px; box-shadow:var(--shadow);
+  }
+  .kpi .label{font-size:11.5px; text-transform:uppercase; letter-spacing:.06em; color:var(--ink-3); font-weight:600;}
+  .kpi .value{font-size:26px; margin-top:5px; font-weight:600;}
+  .kpi .foot{font-size:12px; color:var(--ink-2); margin-top:3px;}
+  .kpi .foot.up{color:var(--good);} .kpi .foot.down{color:var(--cut);}
+
+  /* ---- decision ladder ---- */
+  .ladder{display:flex; flex-direction:column; gap:0; margin-top:16px; position:relative;}
+  .step{
+    display:grid; grid-template-columns:34px 1fr; gap:16px; padding:16px 0; position:relative;
+  }
+  .step:not(:last-child)::after{
+    content:""; position:absolute; left:16px; top:44px; bottom:-2px; width:2px; background:var(--border);
+  }
+  .step .dot{
+    width:34px; height:34px; border-radius:50%; background:var(--surface-2); border:2px solid var(--border);
+    display:flex; align-items:center; justify-content:center; font-size:13px; font-weight:700; color:var(--ink-2);
+    z-index:1; transition:background .15s,border-color .15s,color .15s;
+  }
+  .step.active .dot{background:var(--accent); border-color:var(--accent); color:var(--surface);}
+  .step h3{font-size:14px; font-weight:650; margin-bottom:4px;}
+  .step p{margin:0; color:var(--ink-2); font-size:13px; max-width:66ch;}
+  .step .branches{display:flex; flex-wrap:wrap; gap:8px; margin-top:10px;}
+  .rule{
+    border:1px solid var(--border); border-radius:8px; padding:8px 12px; font-size:12.5px;
+    background:var(--surface-2); color:var(--ink-2); min-width:220px; flex:1; transition:box-shadow .15s, border-color .15s;
+  }
+  .rule.active{border-color:var(--tone,var(--accent)); box-shadow:0 0 0 1px var(--tone,var(--accent)) inset; background:var(--tone-bg,var(--accent-bg));}
+  .rule strong{color:var(--ink); display:block; font-size:12.5px; margin-bottom:2px;}
+  .rule.tone-good{--tone:var(--good); --tone-bg:var(--good-bg);}
+  .rule.tone-cut{--tone:var(--cut); --tone-bg:var(--cut-bg);}
+  .rule.tone-hold{--tone:var(--hold); --tone-bg:var(--hold-bg);}
+
+  /* ---- chips ---- */
+  .chip{
+    display:inline-flex; align-items:center; gap:5px; font-size:11.5px; font-weight:650;
+    padding:3px 9px; border-radius:100px; white-space:nowrap; line-height:1.5;
+  }
+  .chip.up{color:var(--good); background:var(--good-bg);}
+  .chip.down{color:var(--cut); background:var(--cut-bg);}
+  .chip.hold{color:var(--hold); background:var(--hold-bg);}
+  .chip .tier{opacity:.75; font-weight:600;}
+
+  /* ---- calculator ---- */
+  .calc-grid{display:grid; grid-template-columns:1.1fr 1fr; gap:22px; margin-top:14px;}
+  @media (max-width:760px){.calc-grid{grid-template-columns:1fr;}}
+  .field-grid{display:grid; grid-template-columns:1fr 1fr; gap:12px;}
+  .field{display:flex; flex-direction:column; gap:5px;}
+  .field label{font-size:12px; color:var(--ink-2); font-weight:560;}
+  .field input{
+    font:inherit; font-family:var(--font-mono); font-size:14px; padding:8px 10px; border-radius:7px;
+    border:1px solid var(--border); background:var(--surface-2); color:var(--ink);
+  }
+  .field input:focus-visible{outline:2px solid var(--accent); outline-offset:1px;}
+  .field.acct{grid-column:span 2;}
+  .field.acct input{background:transparent; border-style:dashed;}
+  .divider-label{
+    font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--ink-3); font-weight:650;
+    grid-column:1/-1; margin-top:4px; padding-top:10px; border-top:1px solid var(--border);
+  }
+  .result{
+    border-radius:var(--radius); background:var(--surface-2); padding:18px; display:flex; flex-direction:column; gap:12px;
+    justify-content:center;
+  }
+  .result .r-decision{display:flex; align-items:baseline; gap:10px; flex-wrap:wrap;}
+  .result .r-bid{font-size:30px; font-weight:650;}
+  .result .r-arrow{color:var(--ink-3); font-size:18px;}
+  .result .r-reason{font-size:13px; color:var(--ink-2); line-height:1.5;}
+  .result .r-acos{font-size:12.5px; color:var(--ink-3);}
+
+  /* ---- batch table ---- */
+  .table-wrap{overflow-x:auto; margin-top:14px; border:1px solid var(--border); border-radius:var(--radius);}
+  table{width:100%; border-collapse:collapse; font-size:13px; min-width:720px;}
+  thead th{
+    text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:var(--ink-3);
+    font-weight:650; padding:9px 12px; background:var(--surface-2); position:sticky; top:0; border-bottom:1px solid var(--border);
+    cursor:pointer; white-space:nowrap;
+  }
+  thead th:hover{color:var(--ink);}
+  thead th.sorted::after{content:" ↓"; color:var(--accent);}
+  thead th.sorted.asc::after{content:" ↑";}
+  tbody td{padding:9px 12px; border-bottom:1px solid var(--border); vertical-align:middle;}
+  tbody tr:last-child td{border-bottom:none;}
+  tbody tr:hover{background:var(--surface-2);}
+  td.num-cell{font-family:var(--font-mono); font-variant-numeric:tabular-nums; white-space:nowrap;}
+  td.reason-cell{color:var(--ink-2); font-size:12.3px; max-width:340px;}
+  td.target-cell{max-width:220px;}
+  td.target-cell .t-main{color:var(--ink); font-weight:560;}
+  td.target-cell .t-sub{color:var(--ink-3); font-size:11.5px;}
+
+  /* ---- history card ---- */
+  .hist-grid{display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-top:14px;}
+  @media (max-width:700px){.hist-grid{grid-template-columns:1fr;}}
+  .hist-card{border:1px solid var(--border); border-radius:var(--radius); padding:14px 16px; background:var(--surface-2);}
+  .hist-card h4{font-size:13px; margin:0 0 6px; font-weight:650;}
+  .hist-card p{margin:0; font-size:12.5px; color:var(--ink-2);}
+  .illus-note{
+    font-size:12px; color:var(--ink-3); margin-top:12px; padding:10px 12px; border-left:3px solid var(--accent);
+    background:var(--accent-bg); border-radius:6px;
+  }
+
+  /* ---- products tab ---- */
+  .controls-row{display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap;}
+  .seg{display:flex; gap:3px; background:var(--surface-2); padding:3px; border-radius:8px;}
+  .seg button{
+    font:inherit; font-size:12.5px; font-weight:600; border:none; background:transparent; color:var(--ink-2);
+    padding:7px 14px; border-radius:6px; cursor:pointer;
+  }
+  .seg button[aria-pressed="true"]{background:var(--surface); color:var(--ink); box-shadow:var(--shadow);}
+  .search{
+    font:inherit; font-size:13px; padding:8px 12px; border-radius:7px; border:1px solid var(--border);
+    background:var(--surface-2); color:var(--ink); width:220px;
+  }
+  .disclaimer{
+    font-size:12.5px; color:var(--ink-2); background:var(--hold-bg); border-left:3px solid var(--hold);
+    padding:10px 14px; border-radius:6px; margin-top:14px;
+  }
+  .spark-cell{width:130px;}
+  .roi-pill{
+    font-family:var(--font-mono); font-size:11.5px; padding:2px 7px; border-radius:5px;
+    background:var(--surface-2); color:var(--ink-2); border:1px solid var(--border);
+  }
+  tbody tr.sku-row{cursor:pointer;}
+  .sku-name{font-weight:600;}
+
+  .detail-panel{margin-top:16px; border-top:1px solid var(--border); padding-top:16px;}
+  .detail-head{display:flex; justify-content:space-between; align-items:baseline; flex-wrap:wrap; gap:8px;}
+  .detail-head h3{font-size:15px;}
+  .detail-head .close-btn{font-size:12px; color:var(--ink-3); background:none; border:none; cursor:pointer; font:inherit;}
+  .chart-wrap{position:relative; margin-top:10px;}
+  .tooltip-box{
+    position:absolute; pointer-events:none; background:var(--ink); color:var(--bg); font-size:11.5px;
+    padding:5px 9px; border-radius:6px; transform:translate(-50%,-115%); white-space:nowrap; opacity:0;
+    font-family:var(--font-mono); z-index:5;
+  }
+  :root[data-theme="dark"] .tooltip-box, @media (prefers-color-scheme:dark){ .tooltip-box{} }
+
+  footer.credit{max-width:1180px; margin:26px auto 0; color:var(--ink-3); font-size:11.5px; text-align:center;}
+  footer.credit code{font-family:var(--font-mono); background:var(--surface-2); padding:1px 5px; border-radius:4px;}
+</style>
+
+<div id="app">
+  <header class="top">
+    <div>
+      <span class="eyebrow">Léonard · Amazon Ads Sponsored Products</span>
+      <h1>JMN — moteur d'optimisation des enchères</h1>
+      <p class="sub">Workflow manuel : export bulk 14&nbsp;jours → moteur de règles → journal de décisions → révision humaine → mise en ligne. Client actif : JMN (planches à découper WFC).</p>
+    </div>
+    <nav class="tabs" role="tablist" aria-label="Sections">
+      <button class="tab" role="tab" id="tabbtn-engine" aria-controls="panel-engine" aria-selected="true" data-tab="engine">Comment ça décide</button>
+      <button class="tab" role="tab" id="tabbtn-products" aria-controls="panel-products" aria-selected="false" data-tab="products">Performance produit</button>
+    </nav>
+  </header>
+
+  <main>
+    <!-- ============ PANEL 1 : ENGINE ============ -->
+    <section id="panel-engine" role="tabpanel" aria-labelledby="tabbtn-engine">
+
+      <div class="kpi-row">
+        <div class="kpi">
+          <div class="label">ACOS cible</div>
+          <div class="value num" id="kpi-target-acos">—</div>
+          <div class="foot">Vérifié avec Joseph — pilote toutes les décisions de mise à jour d'enchère</div>
+        </div>
+        <div class="kpi">
+          <div class="label">Panier moyen du compte (AOV)</div>
+          <div class="value num" id="kpi-aov">—</div>
+          <div class="foot">Ventes ÷ commandes, calculé sur le fichier 14&nbsp;jours — sert au calcul du CPA cible</div>
+        </div>
+        <div class="kpi">
+          <div class="label">Taux de conversion de référence</div>
+          <div class="value num" id="kpi-cvr">—</div>
+          <div class="foot">Commandes ÷ clics du compte — mesure la confiance sur les cibles à zéro commande</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>La chaîne de décision, étape par étape</h2>
+        <p class="card-desc">Le moteur relit chaque mot-clé et cible produit activés du fichier bulk. Chaque étape ci-dessous vient directement de <code class="mono">optimize.py</code>. Testez la calculatrice plus bas : l'étape suivie s'allume ici en temps réel.</p>
+        <div class="ladder" id="ladder">
+          <div class="step" id="step-gate">
+            <div class="dot">1</div>
+            <div>
+              <h3>Filtre de données</h3>
+              <p>Sous <span class="mono" id="cfg-min-clicks">10</span> clics sur les 14 jours : pas assez de signal, aucun changement. Cette étape protège les petites cibles du bruit statistique.</p>
+            </div>
+          </div>
+          <div class="step" id="step-orders">
+            <div class="dot">2</div>
+            <div>
+              <h3>Y a-t-il eu des commandes ?</h3>
+              <p>Si oui → on compare l'ACOS réel à la cible. Si non → on teste si l'absence de commande est statistiquement significative avant de couper.</p>
+              <div class="branches">
+                <div class="rule tone-cut" id="rule-high-acos">
+                  <strong>ACOS trop élevé</strong>
+                  Au-dessus de la cible → enchère réduite. Normal : jusqu'à <span class="mono" id="cfg-high-normal">10%</span>. Extrême (ACOS ≥ <span class="mono" id="cfg-high-mult">2×</span> la cible) : jusqu'à <span class="mono" id="cfg-high-extreme">25%</span>.
+                </div>
+                <div class="rule tone-hold" id="rule-mid-band">
+                  <strong>Zone neutre</strong>
+                  Entre <span class="mono" id="cfg-low-threshold">80%</span> et 100% de la cible → aucun changement. Évite le va-et-vient sur du bruit.
+                </div>
+                <div class="rule tone-good" id="rule-low-acos">
+                  <strong>ACOS très bas</strong>
+                  Sous <span class="mono" id="cfg-low-threshold-2">80%</span> de la cible → enchère augmentée. Normal : +<span class="mono" id="cfg-low-normal">5–10%</span>. Extrême (≤ <span class="mono" id="cfg-low-extreme-pct">50%</span> de la cible) : +<span class="mono" id="cfg-low-extreme">20%</span>.
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="step" id="step-zero">
+            <div class="dot">2b</div>
+            <div>
+              <h3>Zéro commande : preuve statistique avant de couper</h3>
+              <p>Le moteur calcule la probabilité qu'une cible moyenne du compte affiche zéro commande par pur hasard, avec ce nombre de clics et le taux de conversion réel du compte (p_zéro). Pas de seuil de dépense fixe — de la confiance statistique.</p>
+              <div class="branches">
+                <div class="rule tone-hold" id="rule-zero-hold">
+                  <strong>Pas assez de confiance</strong>
+                  p_zéro &gt; <span class="mono" id="cfg-zero-max">15%</span> → on laisse courir, ce n'est probablement que de la variance normale.
+                </div>
+                <div class="rule tone-cut" id="rule-zero-cut">
+                  <strong>Confiance suffisante</strong>
+                  p_zéro ≤ <span class="mono" id="cfg-zero-max-2">15%</span> → coupe jusqu'à <span class="mono" id="cfg-zero-normal">10%</span>. Extrême (p_zéro ≤ <span class="mono" id="cfg-zero-extreme-p">5%</span> et dépense ≥ <span class="mono" id="cfg-zero-extreme-mult">2×</span> le CPA cible) : jusqu'à <span class="mono" id="cfg-zero-extreme">25%</span>, plancher <span class="mono" id="cfg-zero-floor">0,02$</span>.
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="step" id="step-history">
+            <div class="dot">3</div>
+            <div>
+              <h3>Filtre de mémoire (avant d'écrire la décision finale)</h3>
+              <p>La décision proposée passe par les règles d'historique — voir la carte plus bas — qui peuvent la mettre en attente (<em>held</em>) si elle contredit un changement trop récent, sauf signal extrême.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Testez une décision</h2>
+        <p class="card-desc">Entrez les chiffres d'un mot-clé ou d'une cible produit sur la fenêtre de 14 jours — le calcul reproduit exactement la logique de <code class="mono">optimize.py</code> (hors règles d'historique, qui dépendent des lots précédents).</p>
+        <div class="calc-grid">
+          <div class="field-grid">
+            <div class="field"><label for="in-bid">Enchère actuelle ($)</label><input type="number" id="in-bid" value="0.75" step="0.01" min="0"></div>
+            <div class="field"><label for="in-clicks">Clics (14j)</label><input type="number" id="in-clicks" value="45" step="1" min="0"></div>
+            <div class="field"><label for="in-spend">Dépense ($)</label><input type="number" id="in-spend" value="52.00" step="0.01" min="0"></div>
+            <div class="field"><label for="in-sales">Ventes ($)</label><input type="number" id="in-sales" value="118.00" step="0.01" min="0"></div>
+            <div class="field" style="grid-column:span 2"><label for="in-orders">Commandes</label><input type="number" id="in-orders" value="1" step="1" min="0"></div>
+            <div class="divider-label">Contexte du compte (modifiable)</div>
+            <div class="field"><label for="in-target">ACOS cible (%)</label><input type="number" id="in-target" value="15" step="0.5" min="0"></div>
+            <div class="field"><label for="in-aov">AOV compte ($)</label><input type="number" id="in-aov" value="118" step="1" min="0"></div>
+            <div class="field acct"><label for="in-cvr">Taux de conversion de référence du compte (%)</label><input type="number" id="in-cvr" value="3.95" step="0.05" min="0"></div>
+          </div>
+          <div class="result">
+            <div class="r-decision">
+              <span class="r-bid num" id="r-bid-old">0,75 $</span>
+              <span class="r-arrow">→</span>
+              <span class="r-bid num" id="r-bid-new">0,75 $</span>
+              <span id="r-chip"></span>
+            </div>
+            <div class="r-acos" id="r-acos">ACOS réel : —</div>
+            <div class="r-reason" id="r-reason">—</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Le dernier lot réel — 16 juillet 2026</h2>
+        <p class="card-desc">23 décisions sur ~300 cibles éligibles, calculées sur l'export bulk 14 jours de JMN. Premier lot du client : l'historique de mémoire est donc encore vide (aucune décision retenue).</p>
+        <div class="kpi-row" style="margin-top:14px;">
+          <div class="kpi"><div class="label">Baisses normales</div><div class="value num" style="color:var(--cut)">8</div><div class="foot">ACOS au-dessus de la cible, jusqu'à -10%</div></div>
+          <div class="kpi"><div class="label">Baisses extrêmes</div><div class="value num" style="color:var(--cut)">8</div><div class="foot">ACOS ≥ 2× la cible, jusqu'à -25%</div></div>
+          <div class="kpi"><div class="label">Hausses normales</div><div class="value num" style="color:var(--good)">2</div><div class="foot">ACOS sous 80% de la cible, +5 à 10%</div></div>
+          <div class="kpi"><div class="label">Hausses extrêmes</div><div class="value num" style="color:var(--good)">5</div><div class="foot">ACOS sous 50% de la cible, +20%</div></div>
+        </div>
+        <div class="table-wrap">
+          <table id="batch-table">
+            <thead>
+              <tr>
+                <th data-key="target_text">Cible</th>
+                <th data-key="clicks">Clics</th>
+                <th data-key="acos">ACOS réel</th>
+                <th data-key="delta">Enchère</th>
+                <th data-key="direction">Décision</th>
+                <th>Raisonnement</th>
+              </tr>
+            </thead>
+            <tbody id="batch-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Règles de mémoire — pourquoi une décision peut être « retenue »</h2>
+        <p class="card-desc">À chaque lot, le moteur relit tous les journaux <code class="mono">logs/changes_*.csv</code> précédents (sauf ceux du même jour) et applique deux garde-fous avant d'écrire une décision.</p>
+        <div class="hist-grid">
+          <div class="hist-card">
+            <h4>Cooldown — <span class="mono" id="cfg-cooldown">7 jours</span></h4>
+            <p>Une cible déjà modifiée dans le dernier lot n'est pas retouchée : la fenêtre de rapport de 14 jours chevauche encore ce changement, donc les données ne prouvent pas encore son effet. Un signal extrême passe outre.</p>
+          </div>
+          <div class="hist-card">
+            <h4>Protection de renversement — <span class="mono" id="cfg-reversal">14 jours</span></h4>
+            <p>Inverser la direction d'un changement (une baisse qui redevient une hausse, ou l'inverse) demande 14 jours de données fraîches — c'est la règle « ne pas annuler le travail de la semaine dernière ». Un signal extrême passe outre.</p>
+          </div>
+        </div>
+        <div class="illus-note">Exemple illustratif (pas de données réelles disponibles) : une cible baissée de 0,90$ à 0,75$ le 10 juillet, puis vue en ACOS bas le 16 juillet, serait mise en <strong>attente</strong> plutôt que remontée immédiatement — sauf si le nouveau signal est extrême.</div>
+      </div>
+
+    </section>
+
+    <!-- ============ PANEL 2 : PRODUCTS ============ -->
+    <section id="panel-products" role="tabpanel" aria-labelledby="tabbtn-products" hidden>
+
+      <div class="kpi-row" id="prod-kpis"></div>
+
+      <div class="card">
+        <div class="controls-row">
+          <div>
+            <h2 style="margin-bottom:2px;">Ventes mensuelles par SKU</h2>
+            <p class="card-desc" style="margin:0;">Source : rapport mensuel JMN 2022–2026 (fichier de référence, distinct du moteur d'enchères). Juillet 2026 est un mois partiel (données arrêtées au 16 juillet) — les variations du mois courant sont donc sous-estimées.</p>
+          </div>
+          <div style="display:flex; gap:10px; align-items:center;">
+            <input type="search" class="search" id="sku-search" placeholder="Filtrer un SKU…">
+            <div class="seg" id="market-seg" role="group" aria-label="Marché">
+              <button aria-pressed="true" data-market="CAD">Canada (CAD)</button>
+              <button aria-pressed="false" data-market="USD">États-Unis (USD)</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="table-wrap">
+          <table id="product-table">
+            <thead>
+              <tr>
+                <th data-key="sku">SKU</th>
+                <th>Tendance (12 mois)</th>
+                <th data-key="last">Dernier mois</th>
+                <th data-key="mom">Var. MoM</th>
+                <th data-key="yoy">Var. YoY</th>
+                <th data-key="total">Total période</th>
+                <th data-key="roi">ROI cible*</th>
+              </tr>
+            </thead>
+            <tbody id="product-tbody"></tbody>
+          </table>
+        </div>
+
+        <div class="disclaimer">* ROI cible = objectif ventes/dépense fixé par Joseph pour 8 SKU de la ligne CLA (bucket courant Q1‑2‑3, hors Q4). Aucun ROI <em>réel</em> par SKU n'est affiché : le fichier bulk actuel ne ventile pas la dépense publicitaire par SKU (les groupes d'annonces mélangent plusieurs SKU) — voir « Points ouverts » de <code class="mono">CLAUDE.md</code>.</div>
+
+        <div class="detail-panel" id="detail-panel" hidden>
+          <div class="detail-head">
+            <h3 id="detail-title">—</h3>
+            <button class="close-btn" id="detail-close">Fermer ✕</button>
+          </div>
+          <div class="chart-wrap">
+            <svg id="detail-chart" viewBox="0 0 960 260" preserveAspectRatio="none" style="width:100%; height:260px; display:block;"></svg>
+            <div class="tooltip-box" id="chart-tooltip"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="credit">Généré depuis <code>db/build_db.py</code> · base <code>db/optimizer.db</code> · client jmn · lot 2026‑07‑16</footer>
+</div>
+
+<script>
+const DATA = __DATA_JSON__;
+
+/* ---------------- tabs ---------------- */
+document.querySelectorAll(".tab").forEach(btn=>{
+  btn.addEventListener("click", ()=>{
+    document.querySelectorAll(".tab").forEach(b=>b.setAttribute("aria-selected", b===btn));
+    document.getElementById("panel-engine").hidden = btn.dataset.tab!=="engine";
+    document.getElementById("panel-products").hidden = btn.dataset.tab!=="products";
+  });
+});
+
+/* ---------------- formatting helpers ---------------- */
+function round2(x){ return Math.round((x + Number.EPSILON)*100)/100; }
+function fmtPct(v){ return (v*100).toFixed(0)+"%"; }
+function fmtMoney(v, cur){
+  const sym = cur==="USD" ? "US$" : "CA$";
+  const sign = v<0 ? "-" : "";
+  return sign + sym + Math.abs(v).toLocaleString("fr-CA",{maximumFractionDigits:0});
+}
+function fmtBid(v){ return v.toLocaleString("fr-CA",{minimumFractionDigits:2,maximumFractionDigits:2})+" $"; }
+
+/* ---------------- fill config placeholders ---------------- */
+(function fillConfig(){
+  const c = DATA.config;
+  document.getElementById("kpi-target-acos").textContent = DATA.targetAcos+"%";
+  document.getElementById("kpi-aov").textContent = "$"+DATA.accountAov;
+  document.getElementById("kpi-cvr").textContent = DATA.baselineCvr+"%";
+  document.getElementById("cfg-min-clicks").textContent = c.minClicks;
+  document.getElementById("cfg-high-normal").textContent = c.highAcos.normalMaxDecrease+"%";
+  document.getElementById("cfg-high-mult").textContent = c.highAcos.extremeMultiple+"×";
+  document.getElementById("cfg-high-extreme").textContent = c.highAcos.extremeMaxDecrease+"%";
+  document.getElementById("cfg-low-threshold").textContent = c.lowAcos.thresholdPct+"%";
+  document.getElementById("cfg-low-threshold-2").textContent = c.lowAcos.thresholdPct+"%";
+  document.getElementById("cfg-low-normal").textContent = c.lowAcos.normalMinIncrease+"–"+c.lowAcos.normalMaxIncrease+"%";
+  document.getElementById("cfg-low-extreme-pct").textContent = c.lowAcos.extremePct+"%";
+  document.getElementById("cfg-low-extreme").textContent = c.lowAcos.extremeMaxIncrease+"%";
+  document.getElementById("cfg-zero-max").textContent = c.wastedSpend.maxZeroProb+"%";
+  document.getElementById("cfg-zero-max-2").textContent = c.wastedSpend.maxZeroProb+"%";
+  document.getElementById("cfg-zero-normal").textContent = c.wastedSpend.normalMaxDecrease+"%";
+  document.getElementById("cfg-zero-extreme-p").textContent = c.wastedSpend.extremeZeroProb+"%";
+  document.getElementById("cfg-zero-extreme-mult").textContent = c.wastedSpend.extremeMinSpendMultiple+"×";
+  document.getElementById("cfg-zero-extreme").textContent = c.wastedSpend.extremeMaxDecrease+"%";
+  document.getElementById("cfg-zero-floor").textContent = c.wastedSpend.bidFloor.toFixed(2).replace(".",",")+"$";
+  document.getElementById("cfg-cooldown").textContent = c.cooldownDays+" jours";
+  document.getElementById("cfg-reversal").textContent = c.reversalDays+" jours";
+})();
+
+/* ---------------- decision engine (mirrors optimize.py::decide_bid) ---------------- */
+function decideBid({clicks, spend, sales, orders, bid}, cfg, accountAov, baselineCvrPct){
+  const targetAcos = cfg.targetAcosPct/100;
+  const targetCpa = accountAov ? targetAcos*accountAov : null;
+
+  if (clicks < cfg.minClicks){
+    return {newBid:bid, tier:null, direction:"hold", phase:"gate",
+      reason:`Données insuffisantes (moins de ${cfg.minClicks} clics) : aucun changement.`};
+  }
+
+  if (orders > 0){
+    const actualAcos = sales ? spend/sales : 0;
+    const low = cfg.lowAcos, high = cfg.highAcos;
+    const lowThreshold = targetAcos * (low.thresholdPct/100);
+    const extremeLowThreshold = targetAcos * (low.extremePct/100);
+
+    if (actualAcos > targetAcos){
+      const extreme = actualAcos >= targetAcos*high.extremeMultiple;
+      const cap = (extreme? high.extremeMaxDecrease : high.normalMaxDecrease)/100;
+      let newBid = bid*(targetAcos/actualAcos);
+      newBid = Math.max(newBid, bid*(1-cap));
+      const tier = extreme?"extreme":"normal";
+      return {newBid:round2(newBid), tier, direction:"down", phase:"high-acos", acos:actualAcos,
+        reason:`ACOS élevé (${fmtPct(actualAcos)} > cible ${fmtPct(targetAcos)}, ${tier==="extreme"?"extrême":"normal"}) : enchère réduite jusqu'à ${Math.round(cap*100)}%.`};
+    }
+    if (actualAcos <= lowThreshold){
+      let pctInc, tier;
+      if (actualAcos <= extremeLowThreshold){ pctInc = low.extremeMaxIncrease; tier = "extreme"; }
+      else {
+        let ratio = lowThreshold ? 1-(actualAcos/lowThreshold) : 1;
+        ratio = Math.min(Math.max(ratio,0),1);
+        pctInc = low.normalMinIncrease + ratio*(low.normalMaxIncrease-low.normalMinIncrease);
+        tier = "normal";
+      }
+      const newBid = round2(bid*(1+pctInc/100));
+      return {newBid, tier, direction:"up", phase:"low-acos", acos:actualAcos,
+        reason:`ACOS bas (${fmtPct(actualAcos)} ≤ seuil ${fmtPct(lowThreshold)}, ${tier==="extreme"?"extrême":"normal"}) : enchère +${Math.round(pctInc)}%.`};
+    }
+    return {newBid:bid, tier:null, direction:"hold", phase:"mid-band", acos:actualAcos,
+      reason:`Zone neutre (ACOS ${fmtPct(actualAcos)}, entre ${fmtPct(lowThreshold)} et ${fmtPct(targetAcos)} de cible) : aucun changement — évite le va-et-vient sur du bruit.`};
+  }
+
+  // zero orders
+  const wc = cfg.wastedSpend;
+  const cvr = baselineCvrPct/100;
+  if (!cvr || cvr<=0){
+    return {newBid:bid, tier:null, direction:"hold", phase:"zero-noconf",
+      reason:"0 commande : aucun taux de conversion de compte disponible pour évaluer la confiance, aucun changement."};
+  }
+  const pZero = Math.pow(1-cvr, clicks);
+  if (pZero*100 > wc.maxZeroProb){
+    return {newBid:bid, tier:null, direction:"hold", phase:"zero-hold",
+      reason:`0 commande sur ${clicks} clics : ${Math.round(pZero*100)}% de chances que ce soit de la variance normale (CVR compte ${baselineCvrPct}%) — pas assez de confiance pour couper.`};
+  }
+  const extreme = (pZero*100 <= wc.extremeZeroProb) && targetCpa!=null && spend >= wc.extremeMinSpendMultiple*targetCpa;
+  const cap = (extreme? wc.extremeMaxDecrease : wc.normalMaxDecrease)/100;
+  const newBid = Math.max(round2(bid*(1-cap)), wc.bidFloor);
+  const tier = extreme?"extreme":"normal";
+  return {newBid, tier, direction:"down", phase:"zero-cut",
+    reason:`0 commande sur ${clicks} clics, dépense ${spend.toFixed(2)}$ (${tier==="extreme"?"extrême":"normal"}, ${Math.round(pZero*100)}% chance de pure variance) : enchère réduite jusqu'à ${Math.round(cap*100)}%.`};
+}
+
+/* ---------------- calculator wiring ---------------- */
+const calcIds = ["in-bid","in-clicks","in-spend","in-sales","in-orders","in-target","in-aov","in-cvr"];
+function runCalc(){
+  const bid = parseFloat(document.getElementById("in-bid").value)||0;
+  const clicks = parseFloat(document.getElementById("in-clicks").value)||0;
+  const spend = parseFloat(document.getElementById("in-spend").value)||0;
+  const sales = parseFloat(document.getElementById("in-sales").value)||0;
+  const orders = parseFloat(document.getElementById("in-orders").value)||0;
+  const targetAcosPct = parseFloat(document.getElementById("in-target").value)||0;
+  const aov = parseFloat(document.getElementById("in-aov").value)||0;
+  const cvrPct = parseFloat(document.getElementById("in-cvr").value)||0;
+
+  const cfg = Object.assign({}, DATA.config, {targetAcosPct});
+  const res = decideBid({clicks,spend,sales,orders,bid}, cfg, aov, cvrPct);
+
+  document.getElementById("r-bid-old").textContent = fmtBid(bid);
+  document.getElementById("r-bid-new").textContent = fmtBid(res.newBid);
+  document.getElementById("r-reason").textContent = res.reason;
+  document.getElementById("r-acos").textContent = res.acos!=null ? `ACOS réel : ${fmtPct(res.acos)}` : "ACOS réel : n/a (pas de vente)";
+
+  const chip = document.getElementById("r-chip");
+  const labelMap = {up:"Hausse", down:"Baisse", hold:"Aucun changement"};
+  chip.className = "chip "+res.direction;
+  chip.innerHTML = labelMap[res.direction] + (res.tier ? ` <span class="tier">· ${res.tier==="extreme"?"extrême":"normal"}</span>` : "");
+
+  // highlight ladder
+  document.querySelectorAll(".step, .rule").forEach(el=>el.classList.remove("active"));
+  const stepFor = {gate:"step-gate", "high-acos":"step-orders","low-acos":"step-orders","mid-band":"step-orders",
+    "zero-noconf":"step-zero","zero-hold":"step-zero","zero-cut":"step-zero"};
+  const ruleFor = {"high-acos":"rule-high-acos","low-acos":"rule-low-acos","mid-band":"rule-mid-band",
+    "zero-hold":"rule-zero-hold","zero-cut":"rule-zero-cut"};
+  document.getElementById(stepFor[res.phase])?.classList.add("active");
+  document.getElementById(ruleFor[res.phase])?.classList.add("active");
+}
+calcIds.forEach(id=>document.getElementById(id).addEventListener("input", runCalc));
+runCalc();
+
+/* ---------------- batch table ---------------- */
+let batchSort = {key:"acos", asc:false};
+function acosOf(d){ return d.sales ? d.spend/d.sales : null; }
+function renderBatchTable(){
+  const rows = DATA.batch.decisions.slice();
+  rows.forEach(d=>d._acos = acosOf(d));
+  rows.sort((a,b)=>{
+    let av, bv;
+    if (batchSort.key==="acos"){ av=a._acos??-1; bv=b._acos??-1; }
+    else if (batchSort.key==="clicks"){ av=a.clicks; bv=b.clicks; }
+    else if (batchSort.key==="delta"){ av=Math.abs(a.new_bid-a.old_bid); bv=Math.abs(b.new_bid-b.old_bid); }
+    else if (batchSort.key==="direction"){ av=a.direction; bv=b.direction; }
+    else { av=(a.target_text||"").toLowerCase(); bv=(b.target_text||"").toLowerCase(); }
+    if (av<bv) return batchSort.asc?-1:1;
+    if (av>bv) return batchSort.asc?1:-1;
+    return 0;
+  });
+  const tbody = document.getElementById("batch-tbody");
+  tbody.innerHTML = rows.map(d=>{
+    const chipClass = d.direction;
+    const tierLabel = d.tier ? (d.tier==="extreme"?"extrême":"normal") : "";
+    return `<tr>
+      <td class="target-cell"><div class="t-main">${escapeHtml(d.target_text||"—")}</div><div class="t-sub">${escapeHtml(d.campaign||"")}</div></td>
+      <td class="num-cell">${Math.round(d.clicks)}</td>
+      <td class="num-cell">${d._acos!=null? fmtPct(d._acos) : "—"}</td>
+      <td class="num-cell">${fmtBid(d.old_bid)} → ${fmtBid(d.new_bid)}</td>
+      <td><span class="chip ${chipClass}">${d.direction==="up"?"Hausse":d.direction==="down"?"Baisse":"Maintien"}${tierLabel? ` <span class="tier">· ${tierLabel}</span>`:""}</span></td>
+      <td class="reason-cell">${escapeHtml(d.reason)}</td>
+    </tr>`;
+  }).join("");
+  document.querySelectorAll("#batch-table thead th").forEach(th=>{
+    th.classList.toggle("sorted", th.dataset.key===batchSort.key);
+    th.classList.toggle("asc", th.dataset.key===batchSort.key && batchSort.asc);
+  });
+}
+document.querySelectorAll("#batch-table thead th[data-key]").forEach(th=>{
+  th.addEventListener("click", ()=>{
+    if (batchSort.key===th.dataset.key) batchSort.asc = !batchSort.asc;
+    else { batchSort.key = th.dataset.key; batchSort.asc = false; }
+    renderBatchTable();
+  });
+});
+function escapeHtml(s){ return String(s).replace(/[&<>"']/g, m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m])); }
+renderBatchTable();
+
+/* ---------------- product performance tab ---------------- */
+const months = DATA.months;
+let currentMarket = "CAD";
+let prodSort = {key:"last", asc:false};
+let searchTerm = "";
+
+function lastVal(arr){
+  for (let i=arr.length-1;i>=0;i--) if (arr[i]!=null) return {v:arr[i], i};
+  return {v:null, i:-1};
+}
+function valAt(arr, idx){ return (idx>=0 && idx<arr.length) ? arr[idx] : null; }
+
+function monthLabel(idx){
+  const FR = ["janv.","févr.","mars","avr.","mai","juin","juil.","août","sept.","oct.","nov.","déc."];
+  const [y,m] = months[idx].split("-");
+  return FR[+m-1]+" "+y;
+}
+
+function buildRows(market){
+  return Object.entries(DATA.products)
+    .filter(([sku,p])=>p[market])
+    .map(([sku,p])=>{
+      const arr = p[market];
+      const last = lastVal(arr);
+      const mom = last.i>0 ? valAt(arr,last.i-1) : null;
+      const yoy = last.i>=12 ? valAt(arr,last.i-12) : null;
+      const total = arr.reduce((s,v)=>s+(v||0),0);
+      const roi = p.roi ? p.roi["Q1-2-3"] : null;
+      return {
+        sku, arr,
+        last: last.v, lastIdx:last.i, isCurrent: last.i===months.length-1,
+        mom: (mom!=null && mom!==0 && last.v!=null) ? (last.v/mom-1) : null,
+        yoy: (yoy!=null && yoy!==0 && last.v!=null) ? (last.v/yoy-1) : null,
+        total, roi
+      };
+    });
+}
+
+function buildSpark(values, w, h){
+  const vals = values.filter(v=>v!=null);
+  if (!vals.length) return "";
+  const max = Math.max(...vals, 0.0001), min = Math.min(...vals, 0);
+  const range = (max-min)||1;
+  const n = values.length;
+  const stepX = w/(n-1||1);
+  let segs = [], curSeg = [];
+  values.forEach((v,i)=>{
+    if (v==null){ if (curSeg.length) segs.push(curSeg); curSeg=[]; return; }
+    const x = i*stepX, y = h - ((v-min)/range)*h*0.86 - 3;
+    curSeg.push([x,y]);
+  });
+  if (curSeg.length) segs.push(curSeg);
+  let out = `<svg viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" style="display:block">`;
+  segs.forEach(seg=>{
+    const pts = seg.map(p=>p.join(",")).join(" ");
+    const areaPts = `0,${h} ${pts} ${seg[seg.length-1][0]},${h}`;
+    out += `<polyline points="${areaPts}" fill="var(--accent-bg)" stroke="none"></polyline>`;
+    out += `<polyline points="${pts}" fill="none" stroke="var(--accent)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"></polyline>`;
+  });
+  const lastSeg = segs[segs.length-1];
+  if (lastSeg){
+    const [ex,ey] = lastSeg[lastSeg.length-1];
+    out += `<circle cx="${ex}" cy="${ey}" r="2.6" fill="var(--accent)"></circle>`;
+  }
+  out += `</svg>`;
+  return out;
+}
+
+function renderProductTable(){
+  let rows = buildRows(currentMarket);
+  if (searchTerm) rows = rows.filter(r=>r.sku.toLowerCase().includes(searchTerm));
+  rows.sort((a,b)=>{
+    let av,bv;
+    if (prodSort.key==="sku"){ av=a.sku; bv=b.sku; }
+    else if (prodSort.key==="mom"){ av=a.mom??-Infinity; bv=b.mom??-Infinity; }
+    else if (prodSort.key==="yoy"){ av=a.yoy??-Infinity; bv=b.yoy??-Infinity; }
+    else if (prodSort.key==="total"){ av=a.total; bv=b.total; }
+    else if (prodSort.key==="roi"){ av=a.roi??-1; bv=b.roi??-1; }
+    else { av=a.last??-Infinity; bv=b.last??-Infinity; }
+    if (av<bv) return prodSort.asc?-1:1;
+    if (av>bv) return prodSort.asc?1:-1;
+    return 0;
+  });
+
+  const tbody = document.getElementById("product-tbody");
+  tbody.innerHTML = rows.map(r=>{
+    const spark = buildSpark(r.arr.slice(-12), 120, 32);
+    const momChip = r.mom==null ? '<span style="color:var(--ink-3)">—</span>' :
+      `<span style="color:${r.mom>=0?"var(--good)":"var(--cut)"}">${r.mom>=0?"+":""}${(r.mom*100).toFixed(0)}%</span>`;
+    const yoyChip = r.yoy==null ? '<span style="color:var(--ink-3)">—</span>' :
+      `<span style="color:${r.yoy>=0?"var(--good)":"var(--cut)"}">${r.yoy>=0?"+":""}${(r.yoy*100).toFixed(0)}%</span>`;
+    const lastCell = r.last==null ? "—" :
+      (r.isCurrent ? fmtMoney(r.last, currentMarket)
+        : `${fmtMoney(r.last, currentMarket)}<div style="font-size:10.5px;color:var(--ink-3);font-weight:500;">${monthLabel(r.lastIdx)}</div>`);
+    return `<tr class="sku-row" data-sku="${escapeHtml(r.sku)}">
+      <td class="sku-name">${escapeHtml(r.sku)}</td>
+      <td class="spark-cell">${spark}</td>
+      <td class="num-cell">${lastCell}</td>
+      <td class="num-cell">${momChip}</td>
+      <td class="num-cell">${yoyChip}</td>
+      <td class="num-cell">${fmtMoney(r.total, currentMarket)}</td>
+      <td class="num-cell">${r.roi!=null? `<span class="roi-pill">${r.roi.toFixed(0)}×</span>` : '<span style="color:var(--ink-3)">—</span>'}</td>
+    </tr>`;
+  }).join("");
+
+  document.querySelectorAll("#product-table thead th").forEach(th=>{
+    th.classList.toggle("sorted", th.dataset.key===prodSort.key);
+    th.classList.toggle("asc", th.dataset.key===prodSort.key && prodSort.asc);
+  });
+
+  tbody.querySelectorAll("tr.sku-row").forEach(tr=>{
+    tr.addEventListener("click", ()=>openDetail(tr.dataset.sku));
+  });
+
+  renderProdKpis(rows);
+}
+
+function renderProdKpis(rows){
+  // Aggregates only cover SKU actually reporting the latest calendar month —
+  // a SKU whose last known sale is older (discontinued/out of stock) would
+  // otherwise silently distort "this month" totals.
+  const current = rows.filter(r=>r.isCurrent && r.last!=null);
+  const totalLast = current.reduce((s,r)=>s+r.last,0);
+  const withMom = current.filter(r=>r.mom!=null);
+  const avgMom = withMom.length ? withMom.reduce((s,r)=>s+r.mom,0)/withMom.length : null;
+  const withYoy = current.filter(r=>r.yoy!=null);
+  const avgYoy = withYoy.length ? withYoy.reduce((s,r)=>s+r.yoy,0)/withYoy.length : null;
+  const topMover = withMom.slice().sort((a,b)=>b.mom-a.mom)[0];
+  const marketLabel = currentMarket==="CAD" ? "Canada" : "États-Unis";
+  const lastMonthLabel = monthLabel(months.length-1);
+  const excluded = rows.length - current.length;
+
+  document.getElementById("prod-kpis").innerHTML = `
+    <div class="kpi"><div class="label">Ventes ${marketLabel} — ${lastMonthLabel}</div><div class="value num">${fmtMoney(totalLast, currentMarket)}</div><div class="foot">${excluded>0? excluded+" SKU sans vente ce mois-ci exclus" : "Somme des SKU actifs ce mois-ci"}</div></div>
+    <div class="kpi"><div class="label">Variation moyenne MoM</div><div class="value num" style="color:${avgMom>=0?"var(--good)":"var(--cut)"}">${avgMom!=null? (avgMom>=0?"+":"")+(avgMom*100).toFixed(0)+"%" : "—"}</div><div class="foot">Moyenne simple, SKU actifs ce mois-ci</div></div>
+    <div class="kpi"><div class="label">Variation moyenne YoY</div><div class="value num" style="color:${avgYoy>=0?"var(--good)":"var(--cut)"}">${avgYoy!=null? (avgYoy>=0?"+":"")+(avgYoy*100).toFixed(0)+"%" : "—"}</div><div class="foot">Vs même mois l'an dernier</div></div>
+    <div class="kpi"><div class="label">Plus forte progression MoM</div><div class="value num" style="font-size:19px">${topMover? escapeHtml(topMover.sku) : "—"}</div><div class="foot up">${topMover? "+"+(topMover.mom*100).toFixed(0)+"% ce mois" : ""}</div></div>
+  `;
+}
+
+document.querySelectorAll("#product-table thead th[data-key]").forEach(th=>{
+  th.addEventListener("click", ()=>{
+    if (prodSort.key===th.dataset.key) prodSort.asc = !prodSort.asc;
+    else { prodSort.key = th.dataset.key; prodSort.asc = false; }
+    renderProductTable();
+  });
+});
+document.querySelectorAll("#market-seg button").forEach(btn=>{
+  btn.addEventListener("click", ()=>{
+    document.querySelectorAll("#market-seg button").forEach(b=>b.setAttribute("aria-pressed", b===btn));
+    currentMarket = btn.dataset.market;
+    closeDetail();
+    renderProductTable();
+  });
+});
+document.getElementById("sku-search").addEventListener("input", e=>{
+  searchTerm = e.target.value.trim().toLowerCase();
+  renderProductTable();
+});
+
+/* ---------------- detail chart ---------------- */
+function openDetail(sku){
+  const p = DATA.products[sku];
+  if (!p || !p[currentMarket]) return;
+  document.getElementById("detail-panel").hidden = false;
+  document.getElementById("detail-title").textContent = `${sku} — ventes mensuelles (${currentMarket==="CAD"?"Canada, CAD":"États-Unis, USD"})`;
+  drawChart(p[currentMarket]);
+  document.getElementById("detail-panel").scrollIntoView({behavior:"smooth", block:"nearest"});
+}
+function closeDetail(){ document.getElementById("detail-panel").hidden = true; }
+document.getElementById("detail-close").addEventListener("click", closeDetail);
+
+function drawChart(values){
+  const svg = document.getElementById("detail-chart");
+  const W=960, H=260, padL=54, padR=14, padT=16, padB=26;
+  const plotW = W-padL-padR, plotH = H-padT-padB;
+  const vals = values.filter(v=>v!=null);
+  const max = Math.max(...vals, 1), min = Math.min(0, ...vals);
+  const range = (max-min)||1;
+  const n = values.length;
+  const stepX = plotW/(n-1);
+  const xAt = i => padL + i*stepX;
+  const yAt = v => padT + plotH - ((v-min)/range)*plotH;
+
+  let gridlines = "", yLabels = "";
+  for (let g=0; g<=4; g++){
+    const val = min + (range*g/4);
+    const y = yAt(val);
+    gridlines += `<line x1="${padL}" y1="${y}" x2="${W-padR}" y2="${y}" stroke="var(--border)" stroke-width="1"></line>`;
+    yLabels += `<text x="${padL-8}" y="${y+3}" text-anchor="end" font-size="10" fill="var(--ink-3)" font-family="var(--font-mono)">${Math.round(val/1000)}k</text>`;
+  }
+
+  let xLabels = "";
+  months.forEach((m,i)=>{
+    if (m.endsWith("-01")) xLabels += `<text x="${xAt(i)}" y="${H-8}" text-anchor="middle" font-size="10" fill="var(--ink-3)" font-family="var(--font-mono)">${m.slice(0,4)}</text>`;
+  });
+
+  let segs=[], cur=[];
+  values.forEach((v,i)=>{
+    if (v==null){ if (cur.length) segs.push(cur); cur=[]; return; }
+    cur.push([xAt(i), yAt(v), i, v]);
+  });
+  if (cur.length) segs.push(cur);
+
+  let paths = "";
+  segs.forEach(seg=>{
+    const line = seg.map(p=>`${p[0]},${p[1]}`).join(" ");
+    const area = `${seg[0][0]},${padT+plotH} ${line} ${seg[seg.length-1][0]},${padT+plotH}`;
+    paths += `<polyline points="${area}" fill="var(--accent-bg)" stroke="none"></polyline>`;
+    paths += `<polyline points="${line}" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></polyline>`;
+  });
+  const lastPt = segs.length ? segs[segs.length-1] : null;
+  const endDot = lastPt ? `<circle cx="${lastPt[lastPt.length-1][0]}" cy="${lastPt[lastPt.length-1][1]}" r="4" fill="var(--accent)" stroke="var(--surface)" stroke-width="2"></circle>` : "";
+
+  const allPts = segs.flat();
+  const dots = allPts.map(p=>`<circle class="pt" cx="${p[0]}" cy="${p[1]}" r="9" fill="transparent" data-i="${p[2]}" data-v="${p[3]}"></circle>`).join("");
+
+  svg.innerHTML = `${gridlines}${paths}${endDot}${yLabels}${xLabels}
+    <line id="guide" x1="0" y1="${padT}" x2="0" y2="${padT+plotH}" stroke="var(--ink-3)" stroke-width="1" opacity="0"></line>
+    <circle id="guide-dot" r="4" fill="var(--accent)" stroke="var(--surface)" stroke-width="2" opacity="0"></circle>
+    ${dots}`;
+
+  const tooltip = document.getElementById("chart-tooltip");
+  const guide = document.getElementById("guide");
+  const guideDot = document.getElementById("guide-dot");
+  const cur_ = currentMarket;
+
+  function showAt(i, x, y, v){
+    guide.setAttribute("x1", x); guide.setAttribute("x2", x); guide.setAttribute("opacity", 1);
+    guideDot.setAttribute("cx", x); guideDot.setAttribute("cy", y); guideDot.setAttribute("opacity", 1);
+    tooltip.style.opacity = 1;
+    const rect = svg.getBoundingClientRect();
+    tooltip.style.left = (x/W*rect.width)+"px";
+    tooltip.style.top = (y/H*rect.height)+"px";
+    tooltip.textContent = `${months[i]} · ${fmtMoney(v, cur_)}`;
+  }
+  function hide(){ guide.setAttribute("opacity",0); guideDot.setAttribute("opacity",0); tooltip.style.opacity=0; }
+
+  svg.querySelectorAll("circle.pt").forEach(dot=>{
+    dot.addEventListener("mouseenter", ()=>{
+      const i = +dot.dataset.i, v = +dot.dataset.v;
+      showAt(i, +dot.getAttribute("cx"), +dot.getAttribute("cy"), v);
+    });
+  });
+  svg.addEventListener("mouseleave", hide);
+}
+
+renderProductTable();
+</script>

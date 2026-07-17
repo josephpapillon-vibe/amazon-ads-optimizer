@@ -3,7 +3,11 @@
 Multi-client Amazon Ads (Sponsored Products) bid optimization engine for Leonard Agence Web
 (user: Joseph, joseph.papillon@leonardagenceweb.com). Built July 2026 with Claude Code.
 This file is the complete project context — it lets any Claude session (in any organization)
-continue the work without the original conversation.
+continue the work without the original conversation, and lets a teammate get oriented without
+having sat through the original build.
+
+Repo: **github.com/josephpapillon-vibe/amazon-ads-optimizer** (private). See "Collaboration
+(git)" below for how to get access and the day-to-day workflow.
 
 ## What this project does
 
@@ -27,6 +31,8 @@ The human reviews the log, then manually uploads the output file in Seller Centr
 ```
 amazon-ads-optimizer/
   CLAUDE.md                 <- this file
+  .gitignore                <- see "Collaboration (git)" for what's excluded and why
+  Synchroniser avec Git.command  <- double-click launcher for tools/git_sync.py (macOS)
   optimize.py               <- the engine (Python 3, requires openpyxl)
   config.template.json      <- defaults used to seed new clients
   db/
@@ -34,6 +40,12 @@ amazon-ads-optimizer/
     build_db.py             <- rebuilds db/optimizer.db + db/export.json from clients/ (read-only
                                 on clients/; run `python3 db/build_db.py` after any new batch)
     optimizer.db, export.json  <- generated, gitignored — never hand-edit, just rerun build_db.py
+  dashboard/
+    template.html           <- the dashboard's HTML/CSS/JS, with a __DATA_JSON__ placeholder
+    build_dashboard.py       <- reads db/export.json + clients/jmn/config.json, writes the file below
+    jmn_dashboard.html       <- generated, gitignored — see "Dashboard" section below
+  tools/
+    git_sync.py             <- tiny localhost app: two buttons, Récupérer (pull) / Envoyer (push)
   clients/
     jmn/                    <- first live client (only active one so far)
       config.json           <- target_acos: 15 (percent) — verified by Joseph
@@ -115,6 +127,34 @@ Markets: Canada (CAD) + USA (USD). Also runs Facebook ads (outside this engine's
   - A note in that tab from patricia.rochette@leonardagenceweb.com about Q4 aggressiveness is
     STALE — Joseph said to ignore it.
 
+## Dashboard (visual explainer + product performance)
+
+`dashboard/build_dashboard.py` turns `db/export.json` (run `db/build_db.py` first) into one
+self-contained HTML file, `dashboard/jmn_dashboard.html`. It's a **static snapshot** — re-run
+both scripts after every new batch or monthly-report update, it does not live-refresh. Publish
+the generated file as a Claude Artifact (or just open it locally) to view it.
+
+Two tabs:
+1. **"Comment ça décide"** — walks through optimize.py's decision ladder (data gate → ACOS
+   high/mid/low → zero-order statistical test → history rules), with a live calculator that
+   reproduces `decide_bid()` in JS so anyone can test hypothetical numbers, plus a real
+   breakdown of the 2026-07-16 batch (23 decisions) and the memory/cooldown rules explained.
+2. **"Performance produit"** — monthly sales per SKU 2022–2026 (CAD/USD), sparklines, MoM/YoY,
+   sourced from the `context/` monthly workbook, not from the bid engine. Clearly caveats that
+   no per-SKU *actual* ROI is shown (ad groups mix SKUs, no per-SKU spend breakdown exists yet —
+   see Open items #2) and that the latest month is partial when applicable.
+
+**Known gap:** `ACCOUNT_AOV` / `BASELINE_CVR_PCT` at the top of `build_dashboard.py` are
+hand-entered constants (from this file's "Client: jmn" numbers below), because `optimize.py`
+computes account AOV / baseline CVR at run time but doesn't persist them into
+`logs/changes_*.csv` — same root cause as the history caveat above. Update those two constants
+by hand after each `optimize.py` run, or wire real persistence into the engine.
+
+A version was published once already at `https://claude.ai/code/artifact/5f9df2fd-616e-46d1-ba12-1736c0308e8f`
+— Artifacts are **private by default**, so Joseph needs to use that page's own share menu for
+a teammate to see it directly. Anyone with this repo can also just rebuild and publish their own
+copy from `dashboard/jmn_dashboard.html`.
+
 ## Open items / next steps
 
 1. **Harvesting not yet implemented** (keyword + negative): needs a **Search Term Report**
@@ -128,24 +168,52 @@ Markets: Canada (CAD) + USA (USD). Also runs Facebook ads (outside this engine's
 3. **Other 5 clients:** rename folders, set target_acos, get exports.
 4. **Batch-not-applied marker** (see history caveat).
 5. Sponsored Brands tab present in exports but not optimized (SP only so far).
+6. **Persist account_aov / baseline_cvr per batch** into the log (currently computed then
+   discarded — see the Dashboard section's "known gap").
 
 ## Collaboration (git)
 
-This project is shared with a colleague, so it's a git repo (initialized 2026-07-17) instead of a
-synced folder (Drive/Dropbox). Reason: `logs/*.csv` is the engine's memory (cooldown/reversal
-rules read it to decide what's safe to touch) — a plain file-sync tool has no locking, so two
-people running `optimize.py` around the same time can silently diverge or overwrite each other's
-history. Git surfaces that as a merge conflict instead of silent data loss.
+This project is shared with a colleague, so it's a git repo (initialized 2026-07-17, pushed to
+GitHub the same day) instead of a synced folder (Drive/Dropbox). Reason: `logs/*.csv` is the
+engine's memory (cooldown/reversal rules read it to decide what's safe to touch) — a plain
+file-sync tool has no locking, so two people running `optimize.py` around the same time can
+silently diverge or overwrite each other's history. Git surfaces that as a merge conflict
+instead of silent data loss.
 
+- **Remote:** `git@github.com:josephpapillon-vibe/amazon-ads-optimizer.git` — **private** repo.
+  Auth is via SSH key (GitHub stopped accepting account passwords over HTTPS in 2021, and a
+  Personal Access Token is easy to mistype/lose); HTTPS + token was tried first and abandoned
+  for that reason.
 - **Tracked:** everything under `clients/` (config.json, input/*.xlsx, output/*.xlsx,
-  logs/*.csv, context/*.xlsx), `optimize.py`, `db/build_db.py`, `db/schema.sql`, this file.
-- **Gitignored:** `db/optimizer.db`, `db/export.json` (derived — rerun `build_db.py` instead of
-  committing), `.DS_Store`, `__pycache__/`.
-- **Workflow:** only one person runs `optimize.py` for a given client at a time. `git pull`
-  before running it, commit + `git push` right after (the new `logs/changes_<date>.csv` and
-  `output/bulk_upload_ready_<date>.xlsx` it produces) so the other person's next run sees it.
-- No remote is configured yet — this is a local repo only until Joseph decides where to host it
-  (e.g. a private GitHub repo) for the colleague to clone.
+  logs/*.csv, context/*.xlsx), `optimize.py`, `db/build_db.py`, `db/schema.sql`,
+  `dashboard/template.html`, `dashboard/build_dashboard.py`, `tools/git_sync.py`, this file.
+- **Gitignored** (all regenerable — rerun the relevant script instead of committing):
+  `db/optimizer.db`, `db/export.json`, `dashboard/jmn_dashboard.html`, `.DS_Store`, `__pycache__/`.
+- **Workflow:** only one person runs `optimize.py` (or anything that writes into `clients/`)
+  for a given client at a time. Pull before running it, commit + push right after (the new
+  `logs/changes_<date>.csv` and `output/bulk_upload_ready_<date>.xlsx` it produces) so the other
+  person's next run sees it.
+
+### tools/git_sync.py — no-terminal sync
+
+A colleague uncomfortable in a terminal can double-click **`Synchroniser avec Git.command`** at
+the project root: it starts a tiny localhost web page (`tools/git_sync.py`, port 8765, bound to
+127.0.0.1 only) with two buttons — **Récupérer** (`git pull`) and **Envoyer** (`git add -A` +
+commit with an auto-generated message + `git push`). Output/errors show directly on the page.
+
+**Caution:** "Envoyer" runs `git add -A` — it stages *everything* changed in the folder, no
+per-file review. Glance at what changed before clicking it; an accidental rename or delete would
+get pushed too. (Confirmed in testing: a client folder rename was picked up and pushed as-is,
+then reverted in a follow-up commit — the tool did exactly what it was asked, for better or worse.)
+
+### Onboarding a new collaborator
+
+1. Joseph adds them on GitHub: repo → **Settings** → **Collaborators** → **Add people**.
+2. They generate their own SSH key (`ssh-keygen -t ed25519 -C "their@email"`) and add the
+   public key at **github.com/settings/ssh/new** — never share a private key or a token.
+3. `git clone git@github.com:josephpapillon-vibe/amazon-ads-optimizer.git`
+4. `python3 db/build_db.py` (needs `openpyxl`: `pip3 install openpyxl` if missing) to get a local
+   `db/optimizer.db` — it's gitignored, everyone builds their own from the tracked source files.
 
 ## Conventions
 

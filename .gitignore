@@ -10,3 +10,7 @@ __pycache__/
 # source of truth: clients/ folders in, generated database/export out.
 db/optimizer.db
 db/export.json
+
+# dashboard/jmn_dashboard.html is generated from db/export.json — rerun
+# python3 dashboard/build_dashboard.py instead of committing it.
+dashboard/jmn_dashboard.html
