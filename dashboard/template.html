@@ -316,8 +316,25 @@
               </div>
             </div>
           </div>
-          <div class="step" id="step-history">
+          <div class="step" id="step-baseline">
             <div class="dot">3</div>
+            <div>
+              <h3>Baseline ROAS + escalade (ajouté 2026-07-20)</h3>
+              <p>Une fois qu'une des étapes ci-dessus juge qu'un changement est justifié (normal ou extrême), l'enchère réellement appliquée n'est plus directement celle calculée plus haut — une règle manuelle plus prudente, basée sur le ROAS (Ventes ÷ Dépense), sert de référence par défaut.</p>
+              <div class="branches">
+                <div class="rule tone-hold" id="rule-baseline-normal">
+                  <strong>Palier « normal »</strong>
+                  La <strong>baseline ROAS gouverne</strong> : ROAS &gt; <span class="mono" id="cfg-rb-high">4,5</span> → +<span class="mono" id="cfg-rb-high-pct">5%</span> ; ROAS &lt; <span class="mono" id="cfg-rb-low">3,5</span> → -<span class="mono" id="cfg-rb-low-high-pct">7%</span> (dépense &gt; <span class="mono" id="cfg-rb-high-spend">100$</span>), -<span class="mono" id="cfg-rb-low-mid-pct">5%</span> (dépense <span class="mono" id="cfg-rb-mid-spend">30-100$</span>) ou -<span class="mono" id="cfg-rb-low-low-pct">3%</span> (dépense <span class="mono" id="cfg-rb-min-spend">10-30$</span>) ; dépense &lt; <span class="mono" id="cfg-rb-min-spend-2">10$</span> → +<span class="mono" id="cfg-rb-low-spend-pct">2%</span> ; zone neutre (ROAS entre les deux seuils) → aucun changement, même si l'analyse ACOS en voulait un.
+                </div>
+                <div class="rule tone-cut" id="rule-baseline-escalate">
+                  <strong>Palier « extrême » → escalade</strong>
+                  L'analyse ACOS/statistique complète (celle des étapes ci-dessus) est utilisée à la place de la baseline, systématiquement. « Extrême » signifie déjà que le moteur a une preuve statistique forte (ACOS ≥ 2× la cible, ≤ 50% de la cible, ou coupe zéro-commande à haute confiance) — exactement le cas où la règle manuelle réagit trop timidement.
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="step" id="step-history">
+            <div class="dot">4</div>
             <div>
               <h3>Filtre de mémoire (avant d'écrire la décision finale)</h3>
               <p>La décision proposée passe par les règles d'historique — voir la carte plus bas — qui peuvent la mettre en attente (<em>held</em>) si elle contredit un changement trop récent, sauf signal extrême.</p>
@@ -349,20 +366,16 @@
               <span id="r-chip"></span>
             </div>
             <div class="r-acos" id="r-acos">ACOS réel : —</div>
+            <div class="r-baseline" id="r-baseline" style="font-size:13px;color:var(--ink-3);margin-top:2px;"></div>
             <div class="r-reason" id="r-reason">—</div>
           </div>
         </div>
       </div>
 
       <div class="card">
-        <h2>Le dernier lot réel — 16 juillet 2026</h2>
-        <p class="card-desc">23 décisions sur ~300 cibles éligibles, calculées sur l'export bulk 14 jours de JMN. Premier lot du client : l'historique de mémoire est donc encore vide (aucune décision retenue).</p>
-        <div class="kpi-row" style="margin-top:14px;">
-          <div class="kpi"><div class="label">Baisses normales</div><div class="value num" style="color:var(--cut)">8</div><div class="foot">ACOS au-dessus de la cible, jusqu'à -10%</div></div>
-          <div class="kpi"><div class="label">Baisses extrêmes</div><div class="value num" style="color:var(--cut)">8</div><div class="foot">ACOS ≥ 2× la cible, jusqu'à -25%</div></div>
-          <div class="kpi"><div class="label">Hausses normales</div><div class="value num" style="color:var(--good)">2</div><div class="foot">ACOS sous 80% de la cible, +5 à 10%</div></div>
-          <div class="kpi"><div class="label">Hausses extrêmes</div><div class="value num" style="color:var(--good)">5</div><div class="foot">ACOS sous 50% de la cible, +20%</div></div>
-        </div>
+        <h2 id="batch-title">Le dernier lot réel</h2>
+        <p class="card-desc" id="batch-desc">—</p>
+        <div class="kpi-row" style="margin-top:14px;" id="batch-kpi-row"></div>
         <div class="table-wrap">
           <table id="batch-table">
             <thead>
@@ -500,6 +513,18 @@ function fmtBid(v){ return v.toLocaleString("fr-CA",{minimumFractionDigits:2,max
   document.getElementById("cfg-zero-floor").textContent = c.wastedSpend.bidFloor.toFixed(2).replace(".",",")+"$";
   document.getElementById("cfg-cooldown").textContent = c.cooldownDays+" jours";
   document.getElementById("cfg-reversal").textContent = c.reversalDays+" jours";
+  const rb = c.roasBaseline;
+  document.getElementById("cfg-rb-high").textContent = rb.highRoasThreshold;
+  document.getElementById("cfg-rb-high-pct").textContent = rb.highRoasIncrease+"%";
+  document.getElementById("cfg-rb-low").textContent = rb.lowRoasThreshold;
+  document.getElementById("cfg-rb-low-high-pct").textContent = rb.highSpendDecrease+"%";
+  document.getElementById("cfg-rb-high-spend").textContent = rb.highSpendThreshold+"$";
+  document.getElementById("cfg-rb-low-mid-pct").textContent = rb.midSpendDecrease+"%";
+  document.getElementById("cfg-rb-mid-spend").textContent = rb.midSpendThreshold+"-"+rb.highSpendThreshold+"$";
+  document.getElementById("cfg-rb-low-low-pct").textContent = rb.lowSpendDecrease+"%";
+  document.getElementById("cfg-rb-min-spend").textContent = rb.minSpend+"-"+rb.midSpendThreshold+"$";
+  document.getElementById("cfg-rb-min-spend-2").textContent = rb.minSpend+"$";
+  document.getElementById("cfg-rb-low-spend-pct").textContent = rb.lowSpendIncrease+"%";
 })();
 
 /* ---------------- decision engine (mirrors optimize.py::decide_bid) ---------------- */
@@ -564,6 +589,55 @@ function decideBid({clicks, spend, sales, orders, bid}, cfg, accountAov, baselin
     reason:`0 commande sur ${clicks} clics, dépense ${spend.toFixed(2)}$ (${tier==="extreme"?"extrême":"normal"}, ${Math.round(pZero*100)}% chance de pure variance) : enchère réduite jusqu'à ${Math.round(cap*100)}%.`};
 }
 
+/* ---------------- ROAS baseline (mirrors optimize.py::roas_baseline_bid) ---------------- */
+function roasBaseline(bid, spend, sales, rb){
+  const roas = spend ? sales/spend : 0;
+  let pct, label;
+  if (spend < rb.minSpend){
+    pct = rb.lowSpendIncrease/100; label = `dépense ${spend.toFixed(2)}$ < ${rb.minSpend}$`;
+  } else if (roas > rb.highRoasThreshold){
+    pct = rb.highRoasIncrease/100; label = `ROAS ${roas.toFixed(2)} > ${rb.highRoasThreshold}`;
+  } else if (roas < rb.lowRoasThreshold){
+    if (spend > rb.highSpendThreshold){
+      pct = -rb.highSpendDecrease/100; label = `ROAS ${roas.toFixed(2)} < ${rb.lowRoasThreshold} & dépense ${spend.toFixed(2)}$ > ${rb.highSpendThreshold}$`;
+    } else if (spend >= rb.midSpendThreshold){
+      pct = -rb.midSpendDecrease/100; label = `ROAS ${roas.toFixed(2)} < ${rb.lowRoasThreshold} & dépense ${spend.toFixed(2)}$ entre ${rb.midSpendThreshold}$ et ${rb.highSpendThreshold}$`;
+    } else {
+      pct = -rb.lowSpendDecrease/100; label = `ROAS ${roas.toFixed(2)} < ${rb.lowRoasThreshold} & dépense ${spend.toFixed(2)}$ entre ${rb.minSpend}$ et ${rb.midSpendThreshold}$`;
+    }
+  } else {
+    pct = 0; label = `ROAS ${roas.toFixed(2)} en zone neutre [${rb.lowRoasThreshold},${rb.highRoasThreshold}]`;
+  }
+  return {newBid: round2(bid*(1+pct)), pct, label};
+}
+
+/* ---------------- combine ACOS ladder + baseline (mirrors optimize.py::main loop) ---------------- */
+function decideFinal({clicks, spend, sales, orders, bid}, cfg, accountAov, baselineCvrPct){
+  const acos = decideBid({clicks,spend,sales,orders,bid}, cfg, accountAov, baselineCvrPct);
+  if (acos.tier === null){
+    return Object.assign({}, acos, {baseline:null, escalated:null});
+  }
+  const base = roasBaseline(bid, spend, sales, cfg.roasBaseline);
+  const acosPct = bid ? (acos.newBid/bid - 1) : 0;
+  if (acos.tier === "extreme"){
+    return Object.assign({}, acos, {
+      baseline: base, escalated: true,
+      reason: acos.reason + ` [baseline ROAS (${base.label}) aurait été ${Math.round(base.pct*100)}% — escaladé vers l'analyse ACOS, palier extrême]`,
+    });
+  }
+  // normal tier: baseline governs
+  const direction = base.pct>0 ? "up" : base.pct<0 ? "down" : "hold";
+  let note;
+  if (base.pct === 0){
+    note = `Baseline ROAS neutre (${base.label}) : aucun changement [l'analyse ACOS, palier normal, aurait suggéré ${Math.round(acosPct*100)}% — ${acos.reason}]`;
+  } else if ((base.pct>0) !== (acosPct>0)){
+    note = `Baseline ROAS appliquée (${base.label}) : ${Math.round(base.pct*100)}% [diverge de l'analyse ACOS, palier normal, direction opposée ${Math.round(acosPct*100)}% — ${acos.reason}]`;
+  } else {
+    note = `Baseline ROAS appliquée (${base.label}) : ${Math.round(base.pct*100)}% [l'analyse ACOS, palier normal, serait allée plus loin : ${Math.round(acosPct*100)}% — ${acos.reason}]`;
+  }
+  return Object.assign({}, acos, {newBid: base.newBid, direction, baseline: base, escalated: false, reason: note});
+}
+
 /* ---------------- calculator wiring ---------------- */
 const calcIds = ["in-bid","in-clicks","in-spend","in-sales","in-orders","in-target","in-aov","in-cvr"];
 function runCalc(){
@@ -577,17 +651,28 @@ function runCalc(){
   const cvrPct = parseFloat(document.getElementById("in-cvr").value)||0;
 
   const cfg = Object.assign({}, DATA.config, {targetAcosPct});
-  const res = decideBid({clicks,spend,sales,orders,bid}, cfg, aov, cvrPct);
+  const res = decideFinal({clicks,spend,sales,orders,bid}, cfg, aov, cvrPct);
 
   document.getElementById("r-bid-old").textContent = fmtBid(bid);
   document.getElementById("r-bid-new").textContent = fmtBid(res.newBid);
   document.getElementById("r-reason").textContent = res.reason;
   document.getElementById("r-acos").textContent = res.acos!=null ? `ACOS réel : ${fmtPct(res.acos)}` : "ACOS réel : n/a (pas de vente)";
 
+  const baselineEl = document.getElementById("r-baseline");
+  if (res.baseline){
+    baselineEl.textContent = res.escalated
+      ? `Baseline ROAS seule aurait donné ${fmtBid(res.baseline.newBid)} (${Math.round(res.baseline.pct*100)}%) — escaladé au-delà.`
+      : `Analyse ACOS seule (palier normal) aurait donné une autre enchère — voir raisonnement ci-dessous.`;
+  } else {
+    baselineEl.textContent = "";
+  }
+
   const chip = document.getElementById("r-chip");
   const labelMap = {up:"Hausse", down:"Baisse", hold:"Aucun changement"};
   chip.className = "chip "+res.direction;
-  chip.innerHTML = labelMap[res.direction] + (res.tier ? ` <span class="tier">· ${res.tier==="extreme"?"extrême":"normal"}</span>` : "");
+  chip.innerHTML = labelMap[res.direction]
+    + (res.tier ? ` <span class="tier">· ${res.tier==="extreme"?"extrême":"normal"}</span>` : "")
+    + (res.escalated ? ` <span class="tier" style="color:var(--cut)">· escaladé</span>` : "");
 
   // highlight ladder
   document.querySelectorAll(".step, .rule").forEach(el=>el.classList.remove("active"));
@@ -597,9 +682,42 @@ function runCalc(){
     "zero-hold":"rule-zero-hold","zero-cut":"rule-zero-cut"};
   document.getElementById(stepFor[res.phase])?.classList.add("active");
   document.getElementById(ruleFor[res.phase])?.classList.add("active");
+  if (res.tier){
+    document.getElementById("step-baseline")?.classList.add("active");
+    document.getElementById(res.tier==="extreme" ? "rule-baseline-escalate" : "rule-baseline-normal")?.classList.add("active");
+  }
 }
 calcIds.forEach(id=>document.getElementById(id).addEventListener("input", runCalc));
 runCalc();
+
+/* ---------------- batch summary (title, description, KPIs) ---------------- */
+function formatDateFr(iso){
+  if (!iso) return "—";
+  const FR = ["janvier","février","mars","avril","mai","juin","juillet","août","septembre","octobre","novembre","décembre"];
+  const [y,m,d] = iso.split("-").map(Number);
+  return `${d} ${FR[m-1]} ${y}`;
+}
+function renderBatchSummary(){
+  const decisions = DATA.batch.decisions || [];
+  const changed = decisions.filter(d=>d.action==="changed");
+  const held = decisions.filter(d=>d.action==="held");
+  document.getElementById("batch-title").textContent = `Le dernier lot réel — ${formatDateFr(DATA.batch.date)}`;
+  document.getElementById("batch-desc").textContent =
+    `${changed.length} changements appliqués, ${held.length} retenus par les règles d'historique, calculés sur l'export bulk 14 jours de JMN.`;
+  const count = (tier, dir) => changed.filter(d=>d.tier===tier && d.direction===dir).length;
+  const escalated = changed.filter(d=>d.escalated==="yes").length;
+  const kpis = [
+    {label:"Baisses normales", value:count("normal","down"), color:"var(--cut)", foot:"ACOS au-dessus de la cible, ou baseline ROAS"},
+    {label:"Baisses extrêmes", value:count("extreme","down"), color:"var(--cut)", foot:"ACOS ≥ 2× la cible, ou coupe zéro-commande à haute confiance"},
+    {label:"Hausses normales", value:count("normal","up"), color:"var(--good)", foot:"ACOS sous 80% de la cible, ou baseline ROAS"},
+    {label:"Hausses extrêmes", value:count("extreme","up"), color:"var(--good)", foot:"ACOS sous 50% de la cible"},
+    {label:"Escaladés au-delà de la baseline", value:escalated, color:"var(--accent-strong)", foot:"Palier extrême : baseline ROAS jugée trop timide"},
+  ];
+  document.getElementById("batch-kpi-row").innerHTML = kpis.map(k=>
+    `<div class="kpi"><div class="label">${k.label}</div><div class="value num" style="color:${k.color}">${k.value}</div><div class="foot">${k.foot}</div></div>`
+  ).join("");
+}
+renderBatchSummary();
 
 /* ---------------- batch table ---------------- */
 let batchSort = {key:"acos", asc:false};
@@ -622,12 +740,15 @@ function renderBatchTable(){
   tbody.innerHTML = rows.map(d=>{
     const chipClass = d.direction;
     const tierLabel = d.tier ? (d.tier==="extreme"?"extrême":"normal") : "";
+    const escBadge = d.escalated==="yes" ? ` <span class="tier" style="color:var(--cut)">· escaladé</span>` : "";
+    const baselineNote = (d.baseline_bid!=null && d.escalated==="yes")
+      ? `<div class="t-sub">baseline ROAS aurait dit ${fmtBid(d.baseline_bid)}</div>` : "";
     return `<tr>
       <td class="target-cell"><div class="t-main">${escapeHtml(d.target_text||"—")}</div><div class="t-sub">${escapeHtml(d.campaign||"")}</div></td>
       <td class="num-cell">${Math.round(d.clicks)}</td>
       <td class="num-cell">${d._acos!=null? fmtPct(d._acos) : "—"}</td>
-      <td class="num-cell">${fmtBid(d.old_bid)} → ${fmtBid(d.new_bid)}</td>
-      <td><span class="chip ${chipClass}">${d.direction==="up"?"Hausse":d.direction==="down"?"Baisse":"Maintien"}${tierLabel? ` <span class="tier">· ${tierLabel}</span>`:""}</span></td>
+      <td class="num-cell">${fmtBid(d.old_bid)} → ${fmtBid(d.new_bid)}${baselineNote}</td>
+      <td><span class="chip ${chipClass}">${d.direction==="up"?"Hausse":d.direction==="down"?"Baisse":"Maintien"}${tierLabel? ` <span class="tier">· ${tierLabel}</span>`:""}${escBadge}</span></td>
       <td class="reason-cell">${escapeHtml(d.reason)}</td>
     </tr>`;
   }).join("");

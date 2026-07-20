@@ -82,6 +82,41 @@ Decision ladder per keyword/target (all thresholds in config.json):
    AND spend ≥ 2× target CPA (cap -25%). Bid floor $0.02. Rationale: e.g. 23 clicks/0 orders at
    4% CVR is ~40% likely to be pure variance — not evidence.
 
+### ROAS baseline + escalation (added 2026-07-20)
+
+The ladder above (steps 2-3) only decides **whether** a change is justified and its **tier**
+(`normal` or `extreme`) — it no longer directly sets the applied bid on its own. Once a tier is
+assigned, `roas_baseline_bid()` computes a second, more conservative number from a flat manual
+rule of thumb (thresholds in `config.json`'s `roas_baseline` block, ROAS = Sales/Spend):
+- spend < $10 → +2%
+- ROAS > 4.5 → +5%
+- ROAS < 3.5 & spend > $100 → -7%
+- ROAS < 3.5 & spend $30-100 → -5%
+- ROAS < 3.5 & spend $10-30 → -3%
+- ROAS 3.5-4.5 (and spend ≥ $10) → neutral, no change
+
+**Which bid actually gets applied:**
+- **`normal` tier → the ROAS baseline governs.** This is deliberately more conservative than the
+  ACOS ladder's own normal-tier move; the ACOS ladder's number is kept only as a comparison note
+  in the log. If baseline is neutral, nothing is applied at all (row doesn't appear in the log,
+  same as any other no-change case) — even if the ACOS ladder wanted a small move. If baseline
+  disagrees on direction with the ACOS ladder (happens near the target ACOS boundary), the
+  baseline's direction wins and the log flags it as "diverges" for manual review.
+- **`extreme` tier → always escalates past the baseline to the full ACOS-ladder move.** This is
+  the "highlight when the change should be more extreme" behavior Anthony asked for: `extreme`
+  already means the ACOS ladder found strong statistical/ratio evidence (≥2× target ACOS, ≤50%
+  of target, or a high-confidence zero-order cut) — that evidence is exactly when a human's flat
+  ROAS rule under-reacts, so the engine overrides it and says so in the log.
+
+This baseline mirrors a manual rule the team already used (not from Joseph — described by
+Anthony on 2026-07-20; see [[jmn-roas-baseline-rule]]). `logs/changes_*.csv` gained two columns:
+`baseline_bid` (what the ROAS rule alone would have set, blank when tier is `None`) and
+`escalated` (`yes`/`no`, blank when tier is `None`) — use these instead of parsing the reason
+text if analyzing a batch programmatically.
+
+**Not yet done:** the 5 placeholder clients' `config.json` files are on an older, different
+schema (no `history_rules`, no `roas_baseline` — see Open items #3) and were left alone.
+
 ### History / memory system (important)
 
 The engine reads all past `logs/changes_*.csv` (excluding same-day, so re-runs replace today's
@@ -123,11 +158,14 @@ Markets: Canada (CAD) + USA (USD). Also runs Facebook ads (outside this engine's
   analysis, independent of this engine's recommendations. `logs/changes_2026-07-16.csv` records
   what the engine *proposed*, not what was actually applied to the account — treat it as
   unreliable memory for cooldown/reversal purposes (see caveat below and Open items #4).
-- **Batch of 2026-07-20** (14 changes: 4 raises, 10 cuts; 10 more held by cooldown/reversal
-  rules that assumed the 07-16 log was applied history) sits in output/ — upload status unknown
-  as of this writing; ask before treating it as applied. **Note:** because the 07-16 log doesn't
-  reflect reality, the 10 holds on 2026-07-20 may be based on a false premise — worth a second
-  look before uploading (see chat 2026-07-20 for the correction).
+- **Batch of 2026-07-20** — re-run twice the same day (same-day re-runs replace the batch, by
+  design): first on the ACOS ladder alone (14 changes: 4 raises, 10 cuts; 10 held), then again
+  after adding the ROAS baseline + escalation layer (see above). **Current output/log reflects
+  the second run:** 14 changes (5 raises, 9 cuts, 11 of the 14 escalated to the full ACOS-ladder
+  move), 8 held. 2 of the original 10 holds (butcher block, wood cutting board /556706285412304)
+  no longer appear at all — their ROAS lands in the 3.5-4.5 neutral zone, so the baseline itself
+  says no change, making the cooldown question moot for those two. Upload status unknown as of
+  this writing; ask before treating it as applied.
 
 ### context/ folder contents (reference only, never auto-read by the engine)
 

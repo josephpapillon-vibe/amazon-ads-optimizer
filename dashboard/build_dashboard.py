@@ -57,14 +57,15 @@ def build_payload():
     if latest_batch:
         for dec in latest_batch["decisions"]:
             d = {k: v for k, v in dec.items() if k not in ("decision_id", "batch_id")}
-            for k in ("old_bid", "new_bid", "clicks", "spend", "sales", "orders"):
+            for k in ("old_bid", "new_bid", "baseline_bid", "clicks", "spend", "sales", "orders"):
                 if d.get(k) is not None:
                     d[k] = round(d[k], 2)
             decisions.append(d)
 
-    ha, la, ws, hr = (
+    ha, la, ws, hr, rb = (
         cfg["bid_rules"]["high_acos"], cfg["bid_rules"]["low_acos"],
         cfg["bid_rules"]["wasted_spend"], cfg["history_rules"],
+        cfg["roas_baseline"],
     )
     return {
         "client": "jmn",
@@ -95,6 +96,18 @@ def build_payload():
             },
             "cooldownDays": hr["cooldown_days"],
             "reversalDays": hr["reversal_protection_days"],
+            "roasBaseline": {
+                "minSpend": rb["min_spend_for_rules"],
+                "lowSpendIncrease": rb["low_spend_increase_pct"],
+                "highRoasThreshold": rb["high_roas_threshold"],
+                "highRoasIncrease": rb["high_roas_increase_pct"],
+                "lowRoasThreshold": rb["low_roas_threshold"],
+                "highSpendThreshold": rb["low_roas_high_spend_threshold"],
+                "highSpendDecrease": rb["low_roas_high_spend_decrease_pct"],
+                "midSpendThreshold": rb["low_roas_mid_spend_threshold"],
+                "midSpendDecrease": rb["low_roas_mid_spend_decrease_pct"],
+                "lowSpendDecrease": rb["low_roas_low_spend_decrease_pct"],
+            },
         },
         "batch": {"date": latest_batch["batch_date"] if latest_batch else None, "decisions": decisions},
         "months": all_months,

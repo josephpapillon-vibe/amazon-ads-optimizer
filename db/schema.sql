@@ -40,7 +40,9 @@ CREATE TABLE bid_decisions (
     orders      REAL,
     reason      TEXT,
     tier        TEXT,               -- 'normal' | 'extreme' | NULL, parsed from reason
-    direction   TEXT                -- 'up' | 'down' | 'hold', derived from old/new bid
+    direction   TEXT,               -- 'up' | 'down' | 'hold', derived from old/new bid
+    baseline_bid REAL,              -- ROAS-rule bid (added 2026-07-20), NULL for older batches/tier=NULL rows
+    escalated    TEXT               -- 'yes' | 'no' | NULL, whether extreme tier overrode the baseline
 );
 
 CREATE TABLE product_sales (
