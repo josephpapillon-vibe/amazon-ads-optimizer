@@ -19,8 +19,8 @@ OUTPUT_PATH = os.path.join(BASE, "dashboard", "jmn_dashboard.html")
 # doesn't write them to logs/changes_*.csv — see the history caveat in CLAUDE.md).
 # Update these two numbers by hand from the terminal output of `python3 optimize.py jmn`
 # next time it's run, or wire real persistence into optimize.py.
-ACCOUNT_AOV = 118
-BASELINE_CVR_PCT = 3.95
+ACCOUNT_AOV = 115.34
+BASELINE_CVR_PCT = 3.67
 
 
 def build_payload():

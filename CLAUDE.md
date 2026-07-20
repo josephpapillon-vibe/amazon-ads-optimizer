@@ -94,7 +94,11 @@ batch) and applies `history_rules`:
 - Held decisions are logged with `action=held` + reason; `action=changed` rows are the memory.
 
 **Caveat:** history assumes every output batch was actually uploaded. If a batch is skipped,
-its log should be deleted (or a not-applied marker added — feature not built yet).
+its log should be deleted (or a not-applied marker added — feature not built yet). **This
+already happened for real:** the 2026-07-16 batch's engine output was never uploaded (manual
+bid changes were made instead, independently — see "Client: jmn" below), so
+`logs/changes_2026-07-16.csv` fed false "applied history" into the 2026-07-20 run's
+cooldown/reversal logic.
 
 ## Client: jmn (the only active client)
 
@@ -102,13 +106,28 @@ Wood cutting boards / butcher blocks brand ("WFC" SKU prefix, competitor benchma
 Markets: Canada (CAD) + USA (USD). Also runs Facebook ads (outside this engine's scope).
 - **target_acos: 15** (Joseph first said 20%, then verified: 15% average).
 - Account stats from 14d file: AOV ≈ $118, baseline CVR ≈ 3.95%, ~300 eligible targets,
-  ~23K rows (mostly negative keywords).
+  ~23K rows (mostly negative keywords). Batch of 2026-07-20 re-run on a fresh 14d export
+  gave AOV ≈ $115.34, baseline CVR ≈ 3.67% — normal week-to-week drift, not a data error.
 - Campaign naming: "NS - SP - Phrase - …", "SP - Auto - Low Bid - CA", etc. Ad groups mix
   multiple SKUs (e.g. one ad group advertises 6 maple-line SKUs) — this blocks clean per-SKU
   target mapping (see Open items).
-- **Batch of 2026-07-16** (23 changes: 16 cuts incl. maple-line keywords at 88–324% ACOS,
-  7 raises on proven winners) sits in output/ — upload status unknown; ask Joseph before
-  treating it as applied.
+- **Bulk export language gotcha:** Seller Central can export the Bulk Operations file with
+  French headers (e.g. "Entité", "État", "Enchère") depending on account/browser language —
+  `optimize.py` only recognizes English headers and exits with a clear "missing columns" error
+  if given a French export. Fix is to re-export in English (done successfully 2026-07-20); no
+  code change was made to support French headers (Joseph's colleague chose re-export over
+  patching optimize.py when asked).
+- **Batch of 2026-07-16** (engine output: 23 changes — 16 cuts incl. maple-line keywords at
+  88–324% ACOS, 7 raises on proven winners) — **the engine's output file was NOT what got
+  uploaded.** Bids in the account were changed on/around 2026-07-16 via separate manual
+  analysis, independent of this engine's recommendations. `logs/changes_2026-07-16.csv` records
+  what the engine *proposed*, not what was actually applied to the account — treat it as
+  unreliable memory for cooldown/reversal purposes (see caveat below and Open items #4).
+- **Batch of 2026-07-20** (14 changes: 4 raises, 10 cuts; 10 more held by cooldown/reversal
+  rules that assumed the 07-16 log was applied history) sits in output/ — upload status unknown
+  as of this writing; ask before treating it as applied. **Note:** because the 07-16 log doesn't
+  reflect reality, the 10 holds on 2026-07-20 may be based on a false premise — worth a second
+  look before uploading (see chat 2026-07-20 for the correction).
 
 ### context/ folder contents (reference only, never auto-read by the engine)
 
