@@ -1,5 +1,14 @@
 #!/usr/bin/env python3
-"""Amazon Ads bid optimizer. Usage: python3 optimize.py <client-folder-name>"""
+"""Amazon Ads bid optimizer.
+
+Two-step workflow so nothing reaches the bulk upload file without a human checkpoint:
+  1. python3 optimize.py <client-folder-name>
+     Computes proposed bid changes and writes a review file — no bulk output yet.
+  2. Review it (tools/review_app.py — double-click "Réviser un lot.command" — or hand-edit
+     the review CSV's `approve` column), then:
+     python3 optimize.py <client-folder-name> --apply <YYYY-MM-DD>
+     Applies only the approved rows and writes the final bulk file + log.
+"""
 import sys
 import json
 import glob
@@ -9,6 +18,8 @@ import os
 import openpyxl
 
 BID_ENTITIES = {"Keyword", "Product targeting"}
+LOG_FIELDS = ["action", "entity", "id", "campaign", "ad_group", "target",
+              "old_bid", "new_bid", "clicks", "spend", "sales", "orders", "reason"]
 
 
 def load_config(client_dir):
@@ -104,7 +115,8 @@ def load_history(client_dir, today):
     """Build per-target change history from past logs/changes_*.csv.
 
     Same-day logs are excluded: re-running before uploading replaces today's
-    batch rather than compounding it. Held rows don't count as changes."""
+    batch rather than compounding it. Only action=changed rows count as history —
+    held AND rejected rows never actually moved the bid."""
     history = {}
     for path in sorted(glob.glob(os.path.join(client_dir, "logs", "changes_*.csv"))):
         date_part = os.path.basename(path)[len("changes_"):-len(".csv")]
@@ -160,36 +172,30 @@ def apply_history_policy(kid, bid, new_bid, tier, history, hist_cfg, today):
     return new_bid, None, note
 
 
-def main():
-    if len(sys.argv) != 2:
-        sys.exit("Usage: python3 optimize.py <client-folder-name>")
-    client = sys.argv[1]
-    base = os.path.dirname(os.path.abspath(__file__))
-    client_dir = os.path.join(base, "clients", client)
-    if not os.path.isdir(client_dir):
-        sys.exit(f"No such client folder: {client_dir}")
-
-    cfg = load_config(client_dir)
-    input_path = find_input_file(client_dir)
-
-    wb = openpyxl.load_workbook(input_path, data_only=True)
+def open_campaigns_sheet(path):
+    wb = openpyxl.load_workbook(path, data_only=True)
     sheet_name = find_campaigns_sheet(wb)
     ws = wb[sheet_name]
     headers = [c.value for c in ws[1]]
     idx = {h: i + 1 for i, h in enumerate(headers)}  # 1-based for openpyxl cell access
-
     required = ["Entity", "State", "Bid", "Clicks", "Spend", "Sales", "Orders",
                 "Operation", "Campaign name (Informational only)", "Ad group name (Informational only)",
                 "Keyword text", "Product targeting expression", "Keyword ID", "Product Targeting ID"]
     missing = [c for c in required if c not in idx]
     if missing:
         sys.exit(f"Expected columns missing from sheet '{sheet_name}': {missing}")
+    return wb, sheet_name, ws, idx
+
+
+def propose(client, client_dir):
+    """Step 1: compute proposed changes, write a review file. No bulk output yet."""
+    cfg = load_config(client_dir)
+    input_path = find_input_file(client_dir)
+    wb, sheet_name, ws, idx = open_campaigns_sheet(input_path)
 
     def cell(row_num, col_name):
         return ws.cell(row=row_num, column=idx[col_name]).value
 
-    # account-level AOV proxy for target CPA calc, and baseline CVR for
-    # statistical confidence on zero-order cuts
     total_sales, total_orders, total_clicks = 0.0, 0.0, 0.0
     for r in range(2, ws.max_row + 1):
         if cell(r, "Entity") in BID_ENTITIES and cell(r, "State") == "enabled":
@@ -229,6 +235,7 @@ def main():
             continue
         target_text = cell(r, "Keyword text") or cell(r, "Product targeting expression")
         entry = {
+            "row": r,
             "action": "held" if hold_reason else "changed",
             "entity": entity,
             "id": kid,
@@ -243,37 +250,115 @@ def main():
             "orders": row["Orders"],
             "reason": (hold_reason or reason) + note,
         }
-        if hold_reason:
-            held.append(entry)
-        else:
-            ws.cell(row=r, column=idx["Operation"], value="Update")
-            ws.cell(row=r, column=idx["Bid"], value=new_bid)
-            changes.append(entry)
+        (held if hold_reason else changes).append(entry)
 
     date_str = today.isoformat()
+    review_dir = os.path.join(client_dir, "review")
+    os.makedirs(review_dir, exist_ok=True)
+    review_csv = os.path.join(review_dir, f"review_{date_str}.csv")
+    review_json = os.path.join(review_dir, f"review_{date_str}.json")
+
+    with open(review_csv, "w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=["approve"] + LOG_FIELDS)
+        writer.writeheader()
+        for c in changes:
+            writer.writerow({"approve": "TRUE", **{k: c[k] for k in LOG_FIELDS}})
+
+    with open(review_json, "w") as f:
+        json.dump({
+            "source_file": input_path,
+            "sheet_name": sheet_name,
+            "account_aov": account_aov,
+            "baseline_cvr": baseline_cvr,
+            "changes": changes,
+            "held": held,
+        }, f, indent=1, default=str)
+
+    print(f"Account AOV (proxy): {account_aov}")
+    print(f"Account baseline CVR: {baseline_cvr:.2%}" if baseline_cvr else "Account baseline CVR: n/a")
+    print(f"History: {len(history)} targets with past changes (from {len(set(h['date'] for hs in history.values() for h in hs))} prior batch(es))")
+    print(f"Proposed changes: {len(changes)} (edit the 'approve' column, or use the review UI)")
+    print(f"Held by history rules: {len(held)} (never need approval — already blocked)")
+    print(f"Review file: {review_csv}")
+    print(f"Next step: python3 optimize.py {client} --apply {date_str}")
+
+
+def apply_batch(client, client_dir, date_str):
+    """Step 2: apply only the approved rows from a review file, write the final bulk output + log."""
+    review_dir = os.path.join(client_dir, "review")
+    review_csv = os.path.join(review_dir, f"review_{date_str}.csv")
+    review_json = os.path.join(review_dir, f"review_{date_str}.json")
+    if not os.path.exists(review_json):
+        sys.exit(f"No review found for {date_str} — expected {review_json}")
+
+    with open(review_json) as f:
+        state = json.load(f)
+    approvals = {}
+    with open(review_csv, newline="") as f:
+        for row in csv.DictReader(f):
+            approvals[row["id"]] = row["approve"].strip().upper() in ("TRUE", "1", "YES")
+
+    source_file = state["source_file"]
+    if not os.path.exists(source_file):
+        sys.exit(f"Source file used for this review no longer exists: {source_file} — cannot apply.")
+
+    wb, sheet_name, ws, idx = open_campaigns_sheet(source_file)
+
+    final_changed, final_rejected = [], []
+    for c in state["changes"]:
+        approved = approvals.get(str(c["id"]), True)
+        if approved:
+            ws.cell(row=c["row"], column=idx["Operation"], value="Update")
+            ws.cell(row=c["row"], column=idx["Bid"], value=c["new_bid"])
+            final_changed.append(c)
+        else:
+            rejected = dict(c)
+            rejected["action"] = "rejected"
+            rejected["reason"] = "Rejected in human review. Original reason: " + rejected["reason"]
+            final_rejected.append(rejected)
+
     out_dir = os.path.join(client_dir, "output")
     log_dir = os.path.join(client_dir, "logs")
+    os.makedirs(out_dir, exist_ok=True)
+    os.makedirs(log_dir, exist_ok=True)
     out_path = os.path.join(out_dir, f"bulk_upload_ready_{date_str}.xlsx")
     log_path = os.path.join(log_dir, f"changes_{date_str}.csv")
 
     wb.save(out_path)
 
     with open(log_path, "w", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=["action", "entity", "id", "campaign", "ad_group", "target",
-                                                "old_bid", "new_bid", "clicks", "spend", "sales", "orders", "reason"])
+        writer = csv.DictWriter(f, fieldnames=LOG_FIELDS)
         writer.writeheader()
-        writer.writerows(changes + held)
+        for c in final_changed + final_rejected + state["held"]:
+            writer.writerow({k: c[k] for k in LOG_FIELDS})
 
-    increased = sum(1 for c in changes if c["new_bid"] > c["old_bid"])
-    decreased = sum(1 for c in changes if c["new_bid"] < c["old_bid"])
-    print(f"Account AOV (proxy): {account_aov}")
-    print(f"Account baseline CVR: {baseline_cvr:.2%}" if baseline_cvr else "Account baseline CVR: n/a")
-    print(f"Rows evaluated (Keyword/Product targeting, enabled): scanned sheet '{sheet_name}'")
-    print(f"History: {len(history)} targets with past changes (from {len(set(h['date'] for hs in history.values() for h in hs))} prior batch(es))")
-    print(f"Bid changes: {len(changes)} ({increased} increased, {decreased} decreased)")
-    print(f"Held by history rules: {len(held)}")
+    increased = sum(1 for c in final_changed if c["new_bid"] > c["old_bid"])
+    decreased = sum(1 for c in final_changed if c["new_bid"] < c["old_bid"])
+    print(f"Applied: {len(final_changed)} ({increased} increased, {decreased} decreased)")
+    print(f"Rejected in review: {len(final_rejected)}")
+    print(f"Held by history rules: {len(state['held'])}")
     print(f"Output: {out_path}")
     print(f"Log: {log_path}")
+
+
+def main():
+    args = sys.argv[1:]
+    if len(args) == 1:
+        client, apply_date = args[0], None
+    elif len(args) == 3 and args[1] == "--apply":
+        client, apply_date = args[0], args[2]
+    else:
+        sys.exit("Usage: python3 optimize.py <client-folder-name> [--apply <YYYY-MM-DD>]")
+
+    base = os.path.dirname(os.path.abspath(__file__))
+    client_dir = os.path.join(base, "clients", client)
+    if not os.path.isdir(client_dir):
+        sys.exit(f"No such client folder: {client_dir}")
+
+    if apply_date is None:
+        propose(client, client_dir)
+    else:
+        apply_batch(client, client_dir, apply_date)
 
 
 if __name__ == "__main__":
