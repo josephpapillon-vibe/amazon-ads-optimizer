@@ -45,17 +45,17 @@ async function run(action){{
   out.textContent = 'En cours...';
   const ticker = setInterval(() => {{
     elapsed = Math.round((Date.now() - startedAt) / 1000);
-    out.textContent = 'En cours... (' + elapsed + 's — ça peut prendre jusqu\\'à une minute sur un réseau lent)';
+    out.textContent = 'En cours... (' + elapsed + 's — ça peut prendre 1-2 minutes sur un réseau lent)';
   }}, 1000);
   const controller = new AbortController();
-  const abortTimer = setTimeout(() => controller.abort(), 65000);
+  const abortTimer = setTimeout(() => controller.abort(), 240000);
   try {{
     const res = await fetch('/'+action, {{method:'POST', signal: controller.signal}});
     const data = await res.json();
     out.textContent = data.output || '(rien)';
   }} catch(e) {{
     out.textContent = e.name === 'AbortError'
-      ? 'Aucune réponse après 65s — le serveur est peut-être bloqué. Ferme cette fenêtre Terminal et relance "Synchroniser avec Git.command".'
+      ? 'Aucune réponse après 4 minutes — le serveur est peut-être bloqué. Ferme cette fenêtre Terminal et relance "Synchroniser avec Git.command".'
       : 'Erreur : ' + e;
   }} finally {{
     clearInterval(ticker);
@@ -71,7 +71,7 @@ document.getElementById('push').addEventListener('click', ()=>run('push'));
 
 def run_git(*args):
     result = subprocess.run(
-        ["git", *args], cwd=PROJECT_DIR, capture_output=True, text=True, timeout=60
+        ["git", *args], cwd=PROJECT_DIR, capture_output=True, text=True, timeout=120
     )
     text = (result.stdout + result.stderr).strip()
     return result.returncode == 0, text
