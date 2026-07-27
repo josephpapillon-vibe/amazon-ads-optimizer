@@ -65,7 +65,7 @@ def run_git(*args):
 
 
 def do_pull():
-    ok, out = run_git("pull")
+    ok, out = run_git("pull", "--no-rebase")
     return ok, out or "Déjà à jour."
 
 
