@@ -36,6 +36,20 @@
     "reversal_protection_days": 14
   },
 
+  "roas_baseline": {
+    "_note": "Manual ROAS-based rule of thumb (validated 2026-07-20), used as the default bid whenever bid_rules finds a 'normal' tier change justified. 'Extreme' tier always escalates past this baseline to the full bid_rules move instead.",
+    "min_spend_for_rules": 10,
+    "low_spend_increase_pct": 2,
+    "high_roas_threshold": 4.5,
+    "high_roas_increase_pct": 5,
+    "low_roas_threshold": 3.5,
+    "low_roas_high_spend_threshold": 100,
+    "low_roas_high_spend_decrease_pct": 7,
+    "low_roas_mid_spend_threshold": 30,
+    "low_roas_mid_spend_decrease_pct": 5,
+    "low_roas_low_spend_decrease_pct": 3
+  },
+
   "harvesting": {
     "keyword_harvest_min_orders": 3,
     "negative_harvest_min_clicks": 15,

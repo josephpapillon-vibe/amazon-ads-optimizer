@@ -12,9 +12,11 @@ Repo: **github.com/josephpapillon-vibe/amazon-ads-optimizer** (private). See "Co
 ## What this project does
 
 Clients export Amazon Ads **Bulk Operations files** (multi-tab .xlsx from Seller Central) into a
-per-client `input/` folder. The engine (`optimize.py`) applies rule-based bid optimizations and
-writes a **ready-to-re-upload bulk file** to `output/` plus a plain-English decision log to `logs/`.
-The human reviews the log, then manually uploads the output file in Seller Central.
+per-client `input/` folder. The engine (`optimize.py`) computes rule-based bid changes in two
+steps — **propose** (writes a human-reviewable file, no bulk output yet) then **apply** (only
+after approval, writes the ready-to-re-upload bulk file to `output/` plus the decision log to
+`logs/`) — see "Review workflow" below. The human uploads the output file in Seller Central;
+the engine never pushes changes itself.
 
 **Deliberate design choices (validated with Joseph — do not silently change):**
 - **Manual-trigger, human-uploads workflow.** No Amazon Ads API automation (access not confirmed).
@@ -33,7 +35,8 @@ amazon-ads-optimizer/
   CLAUDE.md                 <- this file
   .gitignore                <- see "Collaboration (git)" for what's excluded and why
   Synchroniser avec Git.command  <- double-click launcher for tools/git_sync.py (macOS)
-  optimize.py               <- the engine (Python 3, requires openpyxl)
+  Réviser un lot.command    <- double-click launcher for tools/review_app.py (macOS)
+  optimize.py               <- the engine (Python 3, requires openpyxl) — propose/apply, see below
   config.template.json      <- defaults used to seed new clients
   db/
     schema.sql              <- SQLite schema for the reporting database
@@ -46,18 +49,21 @@ amazon-ads-optimizer/
     jmn_dashboard.html       <- generated, gitignored — see "Dashboard" section below
   tools/
     git_sync.py             <- tiny localhost app: two buttons, Récupérer (pull) / Envoyer (push)
+    review_app.py           <- tiny localhost app: checkboxes to approve/reject a proposed batch
   clients/
     jmn/                    <- first live client (only active one so far)
       config.json           <- target_acos: 15 (percent) — verified by Joseph
       input/                <- drop 14-day bulk export here (engine picks newest .xlsx)
+      review/               <- review_<date>.csv + .json — proposed batch awaiting approval
       output/               <- bulk_upload_ready_<date>.xlsx (upload this to Seller Central)
       logs/                 <- changes_<date>.csv — decision log AND the engine's memory
       context/              <- reference files, NOT read by optimize.py (see below)
     client-2 .. client-6/   <- placeholders: same structure, target_acos still null, no data yet
 ```
 
-Run with: `python3 optimize.py <client-folder-name>` (e.g. `python3 optimize.py jmn`)
-from the project root. Only .xlsx input supported; newest file in `input/` wins.
+Run with: `python3 optimize.py <client-folder-name>` to propose a batch (e.g. `python3
+optimize.py jmn`), then `python3 optimize.py jmn --apply <YYYY-MM-DD>` after review — see
+"Review workflow" below. Only .xlsx input supported; newest file in `input/` wins.
 
 ## How the engine decides (optimize.py)
 
@@ -82,6 +88,41 @@ Decision ladder per keyword/target (all thresholds in config.json):
    AND spend ≥ 2× target CPA (cap -25%). Bid floor $0.02. Rationale: e.g. 23 clicks/0 orders at
    4% CVR is ~40% likely to be pure variance — not evidence.
 
+### ROAS baseline + escalation (added 2026-07-20)
+
+The ladder above (steps 2-3) only decides **whether** a change is justified and its **tier**
+(`normal` or `extreme`) — it no longer directly sets the applied bid on its own. Once a tier is
+assigned, `roas_baseline_bid()` computes a second, more conservative number from a flat manual
+rule of thumb (thresholds in `config.json`'s `roas_baseline` block, ROAS = Sales/Spend):
+- spend < $10 → +2%
+- ROAS > 4.5 → +5%
+- ROAS < 3.5 & spend > $100 → -7%
+- ROAS < 3.5 & spend $30-100 → -5%
+- ROAS < 3.5 & spend $10-30 → -3%
+- ROAS 3.5-4.5 (and spend ≥ $10) → neutral, no change
+
+**Which bid actually gets applied:**
+- **`normal` tier → the ROAS baseline governs.** This is deliberately more conservative than the
+  ACOS ladder's own normal-tier move; the ACOS ladder's number is kept only as a comparison note
+  in the log. If baseline is neutral, nothing is applied at all (row doesn't appear in the log,
+  same as any other no-change case) — even if the ACOS ladder wanted a small move. If baseline
+  disagrees on direction with the ACOS ladder (happens near the target ACOS boundary), the
+  baseline's direction wins and the log flags it as "diverges" for manual review.
+- **`extreme` tier → always escalates past the baseline to the full ACOS-ladder move.** This is
+  the "highlight when the change should be more extreme" behavior Anthony asked for: `extreme`
+  already means the ACOS ladder found strong statistical/ratio evidence (≥2× target ACOS, ≤50%
+  of target, or a high-confidence zero-order cut) — that evidence is exactly when a human's flat
+  ROAS rule under-reacts, so the engine overrides it and says so in the log.
+
+This baseline mirrors a manual rule the team already used (not from Joseph — described by
+Anthony on 2026-07-20; see [[jmn-roas-baseline-rule]]). `logs/changes_*.csv` gained two columns:
+`baseline_bid` (what the ROAS rule alone would have set, blank when tier is `None`) and
+`escalated` (`yes`/`no`, blank when tier is `None`) — use these instead of parsing the reason
+text if analyzing a batch programmatically.
+
+**Not yet done:** the 5 placeholder clients' `config.json` files are on an older, different
+schema (no `history_rules`, no `roas_baseline` — see Open items #3) and were left alone.
+
 ### History / memory system (important)
 
 The engine reads all past `logs/changes_*.csv` (excluding same-day, so re-runs replace today's
@@ -94,7 +135,39 @@ batch) and applies `history_rules`:
 - Held decisions are logged with `action=held` + reason; `action=changed` rows are the memory.
 
 **Caveat:** history assumes every output batch was actually uploaded. If a batch is skipped,
-its log should be deleted (or a not-applied marker added — feature not built yet).
+its log should be deleted (or a not-applied marker added — feature not built yet). **This
+already happened for real:** the 2026-07-16 batch's engine output was never uploaded (manual
+bid changes were made instead, independently — see "Client: jmn" below), so
+`logs/changes_2026-07-16.csv` fed false "applied history" into the 2026-07-20 run's
+cooldown/reversal logic.
+
+### Review workflow (added 2026-07-27)
+
+Nothing reaches the bulk upload file without an explicit human approval step now — the previous
+single-command flow wrote the final `output/`+`logs/` immediately, with no checkpoint before a
+change existed as fact. Two steps instead:
+
+1. **Propose:** `python3 optimize.py <client>` runs the full decision ladder + ROAS baseline
+   exactly as before, but writes `clients/<client>/review/review_<date>.csv` (one row per
+   proposed change, `approve` column defaulting `TRUE`) plus a `.json` sidecar (same rows, plus
+   the source file path, sheet name, row numbers, and the `held` rows) instead of touching
+   `output/` or `logs/`. Nothing is applied yet.
+2. **Review:** either hand-edit the CSV's `approve` column (Excel/Numbers), or double-click
+   **`Réviser un lot.command`** for a checkbox UI (`tools/review_app.py`, localhost:8767) —
+   finds the newest not-yet-applied review, shows every proposed change with its reason, lets
+   you toggle any off, click Appliquer.
+3. **Apply:** `python3 optimize.py <client> --apply <date>` (the review UI does this for you)
+   reopens the *original* source file recorded in the `.json` sidecar, writes `Operation=Update`
+   only for approved rows, and produces the final `output/bulk_upload_ready_<date>.xlsx` +
+   `logs/changes_<date>.csv`. Rejected rows are logged as `action=rejected` (with the original
+   reason kept in the text) — `load_history()` only trusts `action=changed` rows, so a rejected
+   row is correctly invisible to future cooldown/reversal decisions, same as a held one.
+
+This directly narrows (but doesn't retroactively fix) the Open items #4 "batch not applied"
+problem: a rejected-in-review row can no longer silently disagree with what's in the account,
+because it's logged as `rejected` rather than looking like an unremarkable `changed` row. It
+does nothing for the *existing* 2026-07-16 log contamination described above — that still needs
+a manual decision (delete the log, or add a retroactive not-applied marker) from Joseph/Anthony.
 
 ## Client: jmn (the only active client)
 
@@ -102,13 +175,31 @@ Wood cutting boards / butcher blocks brand ("WFC" SKU prefix, competitor benchma
 Markets: Canada (CAD) + USA (USD). Also runs Facebook ads (outside this engine's scope).
 - **target_acos: 15** (Joseph first said 20%, then verified: 15% average).
 - Account stats from 14d file: AOV ≈ $118, baseline CVR ≈ 3.95%, ~300 eligible targets,
-  ~23K rows (mostly negative keywords).
+  ~23K rows (mostly negative keywords). Batch of 2026-07-20 re-run on a fresh 14d export
+  gave AOV ≈ $115.34, baseline CVR ≈ 3.67% — normal week-to-week drift, not a data error.
 - Campaign naming: "NS - SP - Phrase - …", "SP - Auto - Low Bid - CA", etc. Ad groups mix
   multiple SKUs (e.g. one ad group advertises 6 maple-line SKUs) — this blocks clean per-SKU
   target mapping (see Open items).
-- **Batch of 2026-07-16** (23 changes: 16 cuts incl. maple-line keywords at 88–324% ACOS,
-  7 raises on proven winners) sits in output/ — upload status unknown; ask Joseph before
-  treating it as applied.
+- **Bulk export language gotcha:** Seller Central can export the Bulk Operations file with
+  French headers (e.g. "Entité", "État", "Enchère") depending on account/browser language —
+  `optimize.py` only recognizes English headers and exits with a clear "missing columns" error
+  if given a French export. Fix is to re-export in English (done successfully 2026-07-20); no
+  code change was made to support French headers (Joseph's colleague chose re-export over
+  patching optimize.py when asked).
+- **Batch of 2026-07-16** (engine output: 23 changes — 16 cuts incl. maple-line keywords at
+  88–324% ACOS, 7 raises on proven winners) — **the engine's output file was NOT what got
+  uploaded.** Bids in the account were changed on/around 2026-07-16 via separate manual
+  analysis, independent of this engine's recommendations. `logs/changes_2026-07-16.csv` records
+  what the engine *proposed*, not what was actually applied to the account — treat it as
+  unreliable memory for cooldown/reversal purposes (see caveat below and Open items #4).
+- **Batch of 2026-07-20** — re-run twice the same day (same-day re-runs replace the batch, by
+  design): first on the ACOS ladder alone (14 changes: 4 raises, 10 cuts; 10 held), then again
+  after adding the ROAS baseline + escalation layer (see above). **Current output/log reflects
+  the second run:** 14 changes (5 raises, 9 cuts, 11 of the 14 escalated to the full ACOS-ladder
+  move), 8 held. 2 of the original 10 holds (butcher block, wood cutting board /556706285412304)
+  no longer appear at all — their ROAS lands in the 3.5-4.5 neutral zone, so the baseline itself
+  says no change, making the cooldown question moot for those two. Upload status unknown as of
+  this writing; ask before treating it as applied.
 
 ### context/ folder contents (reference only, never auto-read by the engine)
 
@@ -136,9 +227,10 @@ the generated file as a Claude Artifact (or just open it locally) to view it.
 
 Two tabs:
 1. **"Comment ça décide"** — walks through optimize.py's decision ladder (data gate → ACOS
-   high/mid/low → zero-order statistical test → history rules), with a live calculator that
-   reproduces `decide_bid()` in JS so anyone can test hypothetical numbers, plus a real
-   breakdown of the 2026-07-16 batch (23 decisions) and the memory/cooldown rules explained.
+   high/mid/low → zero-order statistical test → ROAS baseline/escalation → history rules), with
+   a live calculator that reproduces the same logic in JS so anyone can test hypothetical
+   numbers, plus a real breakdown of the **latest batch** (dynamic — pulls whichever batch is
+   last in `db/export.json`, not frozen to any one date) and the memory/cooldown rules explained.
 2. **"Performance produit"** — monthly sales per SKU 2022–2026 (CAD/USD), sparklines, MoM/YoY,
    sourced from the `context/` monthly workbook, not from the bid engine. Clearly caveats that
    no per-SKU *actual* ROI is shown (ad groups mix SKUs, no per-SKU spend breakdown exists yet —
@@ -185,8 +277,9 @@ instead of silent data loss.
   Personal Access Token is easy to mistype/lose); HTTPS + token was tried first and abandoned
   for that reason.
 - **Tracked:** everything under `clients/` (config.json, input/*.xlsx, output/*.xlsx,
-  logs/*.csv, context/*.xlsx), `optimize.py`, `db/build_db.py`, `db/schema.sql`,
-  `dashboard/template.html`, `dashboard/build_dashboard.py`, `tools/git_sync.py`, this file.
+  logs/*.csv, review/*.csv+*.json, context/*.xlsx), `optimize.py`, `db/build_db.py`,
+  `db/schema.sql`, `dashboard/template.html`, `dashboard/build_dashboard.py`,
+  `tools/git_sync.py`, `tools/review_app.py`, this file.
 - **Gitignored** (all regenerable — rerun the relevant script instead of committing):
   `db/optimizer.db`, `db/export.json`, `dashboard/jmn_dashboard.html`, `.DS_Store`, `__pycache__/`.
 - **Workflow:** only one person runs `optimize.py` (or anything that writes into `clients/`)
@@ -205,6 +298,14 @@ commit with an auto-generated message + `git push`). Output/errors show directly
 per-file review. Glance at what changed before clicking it; an accidental rename or delete would
 get pushed too. (Confirmed in testing: a client folder rename was picked up and pushed as-is,
 then reverted in a follow-up commit — the tool did exactly what it was asked, for better or worse.)
+
+### tools/review_app.py — checkbox review UI
+
+Double-click **`Réviser un lot.command`**: localhost:8767, finds the newest
+`clients/*/review/review_<date>.csv` that hasn't been applied yet, shows every proposed change
+with a checkbox (default checked), and an Appliquer button that rewrites the `approve` column
+and runs `optimize.py <client> --apply <date>` for you. See "Review workflow" above for the
+full propose/review/apply mechanics this sits on top of.
 
 ### Onboarding a new collaborator
 

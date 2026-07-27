@@ -19,7 +19,8 @@ import openpyxl
 
 BID_ENTITIES = {"Keyword", "Product targeting"}
 LOG_FIELDS = ["action", "entity", "id", "campaign", "ad_group", "target",
-              "old_bid", "new_bid", "clicks", "spend", "sales", "orders", "reason"]
+              "old_bid", "new_bid", "baseline_bid", "escalated",
+              "clicks", "spend", "sales", "orders", "reason"]
 
 
 def load_config(client_dir):
@@ -109,6 +110,36 @@ def decide_bid(row, cfg, account_aov, baseline_cvr):
     new_bid = max(round(bid * (1 - cap), 2), floor)
     tier = "extreme" if extreme else "normal"
     return new_bid, f"0 orders over {clicks:.0f} clicks, spend ${spend:.2f} ({tier}, {p_zero:.0%} chance of pure variance): bid cut up to {cap:.0%}", tier
+
+
+def roas_baseline_bid(bid, spend, sales, cfg):
+    """Manual ROAS-based rule of thumb (validated by Joseph's colleague, 2026-07-20) used as the
+    baseline bid whenever decide_bid finds a 'normal' tier change justified. Returns
+    (new_bid, pct, label)."""
+    rb = cfg["roas_baseline"]
+    roas = sales / spend if spend else 0
+
+    if spend < rb["min_spend_for_rules"]:
+        pct = rb["low_spend_increase_pct"] / 100
+        label = f"spend ${spend:.2f} < ${rb['min_spend_for_rules']}"
+    elif roas > rb["high_roas_threshold"]:
+        pct = rb["high_roas_increase_pct"] / 100
+        label = f"ROAS {roas:.2f} > {rb['high_roas_threshold']}"
+    elif roas < rb["low_roas_threshold"]:
+        if spend > rb["low_roas_high_spend_threshold"]:
+            pct = -rb["low_roas_high_spend_decrease_pct"] / 100
+            label = f"ROAS {roas:.2f} < {rb['low_roas_threshold']} & spend ${spend:.2f} > ${rb['low_roas_high_spend_threshold']}"
+        elif spend >= rb["low_roas_mid_spend_threshold"]:
+            pct = -rb["low_roas_mid_spend_decrease_pct"] / 100
+            label = f"ROAS {roas:.2f} < {rb['low_roas_threshold']} & spend ${spend:.2f} in [{rb['low_roas_mid_spend_threshold']},{rb['low_roas_high_spend_threshold']}]"
+        else:
+            pct = -rb["low_roas_low_spend_decrease_pct"] / 100
+            label = f"ROAS {roas:.2f} < {rb['low_roas_threshold']} & spend ${spend:.2f} in [{rb['min_spend_for_rules']},{rb['low_roas_mid_spend_threshold']})"
+    else:
+        pct = 0.0
+        label = f"ROAS {roas:.2f} in neutral zone [{rb['low_roas_threshold']},{rb['high_roas_threshold']}]"
+
+    return round(bid * (1 + pct), 2), pct, label
 
 
 def load_history(client_dir, today):
@@ -228,7 +259,30 @@ def propose(client, client_dir):
             "Orders": cell(r, "Orders"),
         }
         kid = cell(r, "Keyword ID") or cell(r, "Product Targeting ID")
-        new_bid, reason, tier = decide_bid(row, cfg, account_aov, baseline_cvr)
+        acos_bid, acos_reason, tier = decide_bid(row, cfg, account_aov, baseline_cvr)
+
+        baseline_bid_log = ""
+        escalated_log = ""
+        if tier is None:
+            new_bid, reason = acos_bid, acos_reason
+        else:
+            base_bid, base_pct, base_label = roas_baseline_bid(bid, row["Spend"] or 0, row["Sales"] or 0, cfg)
+            baseline_bid_log = base_bid
+            acos_pct = (acos_bid / bid - 1) if bid else 0
+            if tier == "extreme":
+                new_bid = acos_bid
+                escalated_log = "yes"
+                reason = f"{acos_reason} [baseline ROAS ({base_label}) would be {base_pct:+.0%} — escalated to ACOS analysis, extreme tier]"
+            else:
+                new_bid = base_bid
+                escalated_log = "no"
+                if base_pct == 0:
+                    reason = f"Baseline ROAS neutral ({base_label}): no change [ACOS analysis, normal tier, would suggest {acos_pct:+.0%} — {acos_reason}]"
+                elif (base_pct > 0) != (acos_pct > 0):
+                    reason = f"Baseline ROAS applied ({base_label}): {base_pct:+.0%} [diverges from ACOS analysis, normal tier, opposite direction {acos_pct:+.0%} — {acos_reason}]"
+                else:
+                    reason = f"Baseline ROAS applied ({base_label}): {base_pct:+.0%} [ACOS analysis, normal tier, would go further: {acos_pct:+.0%} — {acos_reason}]"
+
         new_bid, hold_reason, note = apply_history_policy(kid, bid, new_bid, tier, history, hist_cfg, today)
 
         if hold_reason is None and round(new_bid, 2) == round(bid, 2):
@@ -244,6 +298,8 @@ def propose(client, client_dir):
             "target": target_text,
             "old_bid": bid,
             "new_bid": new_bid,
+            "baseline_bid": baseline_bid_log,
+            "escalated": escalated_log,
             "clicks": row["Clicks"],
             "spend": row["Spend"],
             "sales": row["Sales"],
@@ -334,7 +390,8 @@ def apply_batch(client, client_dir, date_str):
 
     increased = sum(1 for c in final_changed if c["new_bid"] > c["old_bid"])
     decreased = sum(1 for c in final_changed if c["new_bid"] < c["old_bid"])
-    print(f"Applied: {len(final_changed)} ({increased} increased, {decreased} decreased)")
+    escalated = sum(1 for c in final_changed if c["escalated"] == "yes")
+    print(f"Applied: {len(final_changed)} ({increased} increased, {decreased} decreased), of which {escalated} escalated beyond ROAS baseline (extreme tier)")
     print(f"Rejected in review: {len(final_rejected)}")
     print(f"Held by history rules: {len(state['held'])}")
     print(f"Output: {out_path}")

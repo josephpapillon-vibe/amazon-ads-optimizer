@@ -87,8 +87,9 @@ def ingest_bid_decisions(conn, client_id):
                 conn.execute(
                     """INSERT INTO bid_decisions
                        (batch_id, action, entity, target_id, campaign, ad_group, target_text,
-                        old_bid, new_bid, clicks, spend, sales, orders, reason, tier, direction)
-                       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                        old_bid, new_bid, clicks, spend, sales, orders, reason, tier, direction,
+                        baseline_bid, escalated)
+                       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                     (
                         batch_id, row.get("action"), row.get("entity"), row.get("id"),
                         row.get("campaign"), row.get("ad_group"), row.get("target"),
@@ -98,6 +99,8 @@ def ingest_bid_decisions(conn, client_id):
                         float(row["sales"]) if row.get("sales") else None,
                         float(row["orders"]) if row.get("orders") else None,
                         row.get("reason"), parse_tier(row.get("reason")), direction,
+                        float(row["baseline_bid"]) if row.get("baseline_bid") else None,
+                        row.get("escalated") or None,
                     ),
                 )
 
