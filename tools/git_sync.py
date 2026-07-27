@@ -132,7 +132,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
 
 if __name__ == "__main__":
-    server = http.server.HTTPServer(("127.0.0.1", PORT), Handler)
+    # ThreadingHTTPServer, not HTTPServer: a plain HTTPServer handles one connection at a
+    # time, and the browser's keep-alive connection from loading the page never releases —
+    # so the server never gets back to accept() and every button click after that hangs
+    # forever with no response. One thread per connection fixes it.
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
     webbrowser.open(f"http://127.0.0.1:{PORT}/")
     print(f"Sync Git en cours sur http://127.0.0.1:{PORT}/ — Ctrl+C pour arrêter.")
     server.serve_forever()

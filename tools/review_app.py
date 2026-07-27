@@ -209,7 +209,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
 
 if __name__ == "__main__":
-    server = http.server.HTTPServer(("127.0.0.1", PORT), Handler)
+    # ThreadingHTTPServer, not HTTPServer — see the comment in tools/git_sync.py's __main__:
+    # a single-connection server never gets back to accept() past the page's own keep-alive
+    # connection, so every button click after the initial page load hangs with no response.
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
     webbrowser.open(f"http://127.0.0.1:{PORT}/")
     print(f"Révision de lot en cours sur http://127.0.0.1:{PORT}/ — Ctrl+C pour arrêter.")
     server.serve_forever()
