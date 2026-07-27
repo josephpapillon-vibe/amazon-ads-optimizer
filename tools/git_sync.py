@@ -83,18 +83,23 @@ def do_pull():
 
 
 def do_push():
+    """Commits whatever's changed (if anything), then always attempts a push — a clean
+    working tree can still have local commits not yet on the remote, so "nothing to
+    commit" must not short-circuit into skipping the push."""
     run_git("add", "-A")
     ok, status_out = run_git("status", "--porcelain")
-    if ok and not status_out:
-        return True, "Rien à envoyer — tout est déjà à jour."
-    stamp = datetime.now().strftime("%Y-%m-%d %H:%M")
-    ok, commit_out = run_git("commit", "-m", f"Sync depuis {socket.gethostname()} — {stamp}")
-    if not ok:
-        return False, commit_out
+    commit_out = ""
+    if ok and status_out:
+        stamp = datetime.now().strftime("%Y-%m-%d %H:%M")
+        ok, commit_out = run_git("commit", "-m", f"Sync depuis {socket.gethostname()} — {stamp}")
+        if not ok:
+            return False, commit_out
+
     ok, push_out = run_git("push")
+    output = (commit_out + "\n" + push_out).strip() if commit_out else push_out
     if not ok:
-        return False, commit_out + "\n" + push_out + "\n\n(Astuce : essaie 'Récupérer' d'abord si le message parle de commits distants manquants.)"
-    return True, commit_out + "\n" + push_out
+        return False, output + "\n\n(Astuce : essaie 'Récupérer' d'abord si le message parle de commits distants manquants.)"
+    return True, output or "Rien à envoyer — tout est déjà à jour."
 
 
 class Handler(http.server.BaseHTTPRequestHandler):
