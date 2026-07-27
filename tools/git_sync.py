@@ -37,18 +37,31 @@ PAGE = """<!doctype html>
 </div>
 <pre id="out">Prêt.</pre>
 <script>
-async function run(action, btn){{
+async function run(action){{
   const out = document.getElementById('out');
   document.querySelectorAll('button').forEach(b=>b.disabled=true);
+  const startedAt = Date.now();
+  let elapsed = 0;
   out.textContent = 'En cours...';
+  const ticker = setInterval(() => {{
+    elapsed = Math.round((Date.now() - startedAt) / 1000);
+    out.textContent = 'En cours... (' + elapsed + 's — ça peut prendre jusqu\\'à une minute sur un réseau lent)';
+  }}, 1000);
+  const controller = new AbortController();
+  const abortTimer = setTimeout(() => controller.abort(), 65000);
   try {{
-    const res = await fetch('/'+action, {{method:'POST'}});
+    const res = await fetch('/'+action, {{method:'POST', signal: controller.signal}});
     const data = await res.json();
     out.textContent = data.output || '(rien)';
   }} catch(e) {{
-    out.textContent = 'Erreur : ' + e;
+    out.textContent = e.name === 'AbortError'
+      ? 'Aucune réponse après 65s — le serveur est peut-être bloqué. Ferme cette fenêtre Terminal et relance "Synchroniser avec Git.command".'
+      : 'Erreur : ' + e;
+  }} finally {{
+    clearInterval(ticker);
+    clearTimeout(abortTimer);
+    document.querySelectorAll('button').forEach(b=>b.disabled=false);
   }}
-  document.querySelectorAll('button').forEach(b=>b.disabled=false);
 }}
 document.getElementById('pull').addEventListener('click', ()=>run('pull'));
 document.getElementById('push').addEventListener('click', ()=>run('push'));
